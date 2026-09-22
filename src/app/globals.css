@@ -1,26 +1,65 @@
 @import "tailwindcss";
 
+/* Warm, calm palette — acorn/sage from the center persona (analysis/03 §6b). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbf8f3; /* warm cream */
+  --foreground: #2b2118;
+  --surface: #ffffff; /* cards, bubbles */
+  --muted: #6b6155;
+  --border: #ece3d5;
+  --brand: #4f7a5b; /* sage green */
+  --brand-strong: #3d6349;
+  --brand-fg: #ffffff;
+  --acorn: #8a5a30;
+  --you-bubble: #eef3ec; /* parent's own message */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #17130e;
+    --foreground: #f0e9df;
+    --surface: #221c15;
+    --muted: #a89c8b;
+    --border: #362c21;
+    --brand: #6f9d7c;
+    --brand-strong: #5b8768;
+    --brand-fg: #10140f;
+    --acorn: #c68a53;
+    --you-bubble: #2a241b;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-fg: var(--brand-fg);
+  --color-acorn: var(--acorn);
+  --color-you: var(--you-bubble);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Gentle pulse for the relay-pending indicator; respects reduced-motion. */
+@keyframes softpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-softpulse {
+  animation: softpulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-softpulse {
+    animation: none;
+  }
 }
