@@ -55,12 +55,12 @@ export function seedHistory(db: Database): SeedResultHistory {
        (id, session_id, conversation_id, timestamp, parent_question,
         detected_intent, decision, decision_reason, confidence, provider, model,
         response_text, cited_sources, checks, latency_first_response_ms,
-        parent_feedback)
+        parent_feedback, judge_scores)
      VALUES
        (@id, @session_id, NULL, @timestamp, @parent_question,
         @detected_intent, @decision, @decision_reason, @confidence, 'claude',
         'claude-sonnet-5', @response_text, @cited_sources, NULL, @latency,
-        @parent_feedback)`,
+        @parent_feedback, @judge_scores)`,
   );
   const insertEsc = db.prepare(
     `INSERT INTO escalations
@@ -97,6 +97,10 @@ export function seedHistory(db: Database): SeedResultHistory {
         cited_sources: JSON.stringify(t.cite),
         latency: 900 + (i % 5) * 120,
         parent_feedback: feedback,
+        judge_scores: JSON.stringify({
+          groundedness: Number((0.9 + (i % 9) * 0.01).toFixed(2)),
+          answer_relevancy: 0.96,
+        }),
       });
       audits++;
     }
@@ -130,6 +134,7 @@ export function seedHistory(db: Database): SeedResultHistory {
       cited_sources: "[]",
       latency: 1100,
       parent_feedback: null,
+      judge_scores: null,
     });
     audits++;
     insertEsc.run({
@@ -166,6 +171,7 @@ export function seedHistory(db: Database): SeedResultHistory {
           cited_sources: "[]",
           latency: 1000,
           parent_feedback: null,
+          judge_scores: null,
         });
         audits++;
         insertEsc.run({
@@ -204,6 +210,7 @@ export function seedHistory(db: Database): SeedResultHistory {
           cited_sources: cs.intent === "health" ? JSON.stringify(["health.illness_exclusion"]) : "[]",
           latency: 1000,
           parent_feedback: null,
+          judge_scores: null,
         });
         audits++;
         insertEsc.run({

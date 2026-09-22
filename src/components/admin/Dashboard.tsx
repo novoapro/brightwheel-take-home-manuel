@@ -9,6 +9,7 @@ type Metrics = {
   containmentRate: number;
   escalationRate: number;
   attributionRate: number;
+  groundedness: number | null;
   hoursSaved: number;
   avgHandleMinutes: number;
   thumbsUp: number;
@@ -53,10 +54,12 @@ export default function Dashboard({
 
       {/* Trust */}
       <div className="grid grid-cols-2 gap-3">
+        <Stat label="Groundedness" value={m.groundedness == null ? "—" : pct(m.groundedness)} />
         <Stat label="Answers with a source" value={pct(m.attributionRate)} />
         <Stat label="Interactions this week" value={String(m.total)} />
         <Stat label="👍 / 👎" value={`${m.thumbsUp} / ${m.thumbsDown}`} />
         <Stat label="Captured into handbook" value={String(m.capturedPolicies)} />
+        <Stat label="Escalated to you" value={pct(m.escalationRate)} />
       </div>
 
       {/* Top gaps → curation */}

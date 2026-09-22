@@ -63,6 +63,8 @@ export interface AuditMetricRow {
   detected_intent: string | null;
   parent_feedback: "up" | "down" | null;
   cited_count: number;
+  /** Async Haiku judge groundedness (analysis/04 §7), null until scored. */
+  groundedness: number | null;
   timestamp: string;
 }
 
@@ -70,7 +72,7 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
   const rows = db
     .prepare(
       `SELECT decision, decision_reason, detected_intent, parent_feedback,
-              cited_sources, timestamp
+              cited_sources, judge_scores, timestamp
          FROM interaction_audit`,
     )
     .all() as Array<{
@@ -79,6 +81,7 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
     detected_intent: string | null;
     parent_feedback: "up" | "down" | null;
     cited_sources: string;
+    judge_scores: string | null;
     timestamp: string;
   }>;
   return rows.map((r) => ({
@@ -87,8 +90,23 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
     detected_intent: r.detected_intent,
     parent_feedback: r.parent_feedback,
     cited_count: (JSON.parse(r.cited_sources) as string[]).length,
+    groundedness: r.judge_scores
+      ? ((JSON.parse(r.judge_scores) as { groundedness?: number }).groundedness ?? null)
+      : null,
     timestamp: r.timestamp,
   }));
+}
+
+/** Write the async judge's scores onto an interaction (analysis/04 §7). */
+export function setJudgeScores(
+  db: Database,
+  interactionId: string,
+  scores: { groundedness: number; answer_relevancy: number },
+): boolean {
+  const res = db
+    .prepare(`UPDATE interaction_audit SET judge_scores = ? WHERE id = ?`)
+    .run(JSON.stringify(scores), interactionId);
+  return res.changes > 0;
 }
 
 export interface AuditRecord {

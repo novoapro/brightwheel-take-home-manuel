@@ -4,13 +4,14 @@ import { useState } from "react";
 import Dashboard from "@/components/admin/Dashboard";
 import HandbookEditor from "@/components/admin/HandbookEditor";
 import RelayQueue from "@/components/admin/RelayQueue";
+import SettingsPanel from "@/components/admin/SettingsPanel";
 
 /**
  * Operator control center (analysis/03 §4). Mock passcode gate (§9), then tabs:
  * Dashboard (ROI + gaps), Live relay (answer waiting parents), and Handbook
  * (curate the source of truth). Settings + provider toggle arrive in M6/M7.
  */
-type Tab = "dashboard" | "relay" | "handbook";
+type Tab = "dashboard" | "relay" | "handbook" | "settings";
 
 export default function AdminPage() {
   const [passcode, setPasscode] = useState("");
@@ -71,6 +72,7 @@ export default function AdminPage() {
             ["dashboard", "Dashboard"],
             ["relay", "Live relay"],
             ["handbook", "Handbook"],
+            ["settings", "Settings"],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -88,6 +90,7 @@ export default function AdminPage() {
       {tab === "dashboard" && <Dashboard passcode={authCode} onOpenGaps={() => setTab("handbook")} />}
       {tab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
       {tab === "handbook" && <HandbookEditor passcode={authCode} operatorName={operatorName} />}
+      {tab === "settings" && <SettingsPanel passcode={authCode} />}
     </main>
   );
 }

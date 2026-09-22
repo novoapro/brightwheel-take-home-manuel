@@ -14,6 +14,7 @@ function audit(over: Partial<AuditMetricRow>): AuditMetricRow {
     detected_intent: "hours",
     parent_feedback: null,
     cited_count: 1,
+    groundedness: null,
     timestamp: "2026-09-20T00:00:00Z",
     ...over,
   };
@@ -72,6 +73,24 @@ describe("aggregate (pure)", () => {
     expect(m.topGaps.some((g) => g.question.includes("fever"))).toBe(false);
   });
 
+  it("averages async-judge groundedness over scored rows only", () => {
+    const m = aggregate(
+      [
+        audit({ groundedness: 0.9 }),
+        audit({ groundedness: 1.0 }),
+        audit({ groundedness: null }), // unscored — excluded from the average
+      ],
+      [],
+      0,
+      0,
+    );
+    expect(m.groundedness).toBeCloseTo(0.95);
+  });
+
+  it("groundedness is null when nothing has been judged", () => {
+    expect(aggregate([audit({ groundedness: null })], [], 0, 0).groundedness).toBeNull();
+  });
+
   it("handles an empty log without dividing by zero", () => {
     const m = aggregate([], [], 0, 0);
     expect(m).toMatchObject<Partial<DashboardMetrics>>({
@@ -79,6 +98,7 @@ describe("aggregate (pure)", () => {
       containmentRate: 0,
       attributionRate: 0,
       hoursSaved: 0,
+      groundedness: null,
     });
   });
 });
@@ -103,5 +123,12 @@ describe("computeDashboard over seeded history", () => {
     expect(m.topGaps[0].question).toMatch(/part-time/i);
     expect(m.topGaps[0].count).toBe(5);
     expect(m.topGaps.every((g) => !g.reason.startsWith("sensitive:"))).toBe(true);
+  });
+
+  it("reports seeded judge groundedness (answered rows are pre-scored)", () => {
+    const m = computeDashboard(db);
+    expect(m.groundedness).not.toBeNull();
+    expect(m.groundedness!).toBeGreaterThan(0.85);
+    expect(m.groundedness!).toBeLessThanOrEqual(1);
   });
 });

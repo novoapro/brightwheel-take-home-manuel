@@ -39,6 +39,7 @@ export interface DashboardMetrics {
   escalationRate: number; // escalated / total
   coverageGapRate: number; // out_of_scope / total
   attributionRate: number; // answered w/ ≥1 cited source / answered
+  groundedness: number | null; // avg async-judge groundedness, null if none scored
   hoursSaved: number;
   avgHandleMinutes: number;
   thumbsUp: number;
@@ -72,6 +73,11 @@ export function aggregate(
   const answeredWithSource = audits.filter(
     (a) => a.decision === "answered" && a.cited_count > 0,
   ).length;
+  const scored = audits.filter((a) => a.groundedness != null);
+  const groundedness =
+    scored.length === 0
+      ? null
+      : scored.reduce((sum, a) => sum + (a.groundedness ?? 0), 0) / scored.length;
 
   // Top knowledge gaps: recurring questions the handbook doesn't cover. Exclude
   // case-specific/sensitive relays — those are never "add a policy" candidates.
@@ -113,6 +119,7 @@ export function aggregate(
     escalationRate: ratio(escalated, total),
     coverageGapRate: ratio(outOfScope, total),
     attributionRate: ratio(answeredWithSource, answered),
+    groundedness,
     hoursSaved: (answered * avgHandleMinutes) / 60,
     avgHandleMinutes,
     thumbsUp: audits.filter((a) => a.parent_feedback === "up").length,
