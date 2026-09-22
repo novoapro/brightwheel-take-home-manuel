@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Node (for the app we'll scaffold next)
+node_modules/
+.next/
+dist/
+build/
+*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local SQLite data
+*.sqlite
+*.sqlite3
+*.db
