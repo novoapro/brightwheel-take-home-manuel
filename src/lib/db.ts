@@ -1,22 +1,24 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { migrate, SCHEMA_VERSION } from "./schema";
 
 /**
- * Single better-sqlite3 connection for the app (M0 skeleton).
+ * Single better-sqlite3 connection for the app.
  *
- * The full schema (PolicyRecord, Escalation, InteractionAudit, Conversation,
- * Message, Settings) lands in M1 — see analysis/01-data-and-knowledge-model.md
- * and analysis/06-build-sequence.md. For now this just proves durable,
- * server-side reads/writes end-to-end (the M0 walking skeleton).
- *
- * In production the file lives on the Railway persistent volume via
- * DATABASE_PATH; locally it defaults to ./data/app.db (gitignored).
+ * The full schema (center, policies, escalations, interaction_audit,
+ * conversations, messages, settings) lives in ./schema.ts and is applied on
+ * first connect. In production the file lives on the Railway persistent volume
+ * via DATABASE_PATH; locally it defaults to ./data/app.db (gitignored).
  */
 const DB_PATH = process.env.DATABASE_PATH ?? "./data/app.db";
 
 let _db: Database.Database | null = null;
 
+/**
+ * Open (or return the cached) app connection, running migrations once. The
+ * connection is a process-wide singleton so repositories share one handle.
+ */
 export function getDb(): Database.Database {
   if (_db) return _db;
 
@@ -26,21 +28,20 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
-  // Minimal meta table so the health check reads something real (M0).
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
-  const seed = db.prepare(
-    `INSERT INTO meta (key, value) VALUES (?, ?)
-     ON CONFLICT(key) DO NOTHING`,
-  );
-  seed.run("app", "ai-front-desk");
-  seed.run("schema_version", "0");
+  migrate(db);
 
   _db = db;
+  return db;
+}
+
+/**
+ * Create a fresh, isolated in-memory database with the schema applied. Used by
+ * tests so each suite runs against a clean DB with no shared state.
+ */
+export function createMemoryDb(): Database.Database {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  migrate(db);
   return db;
 }
 
@@ -49,6 +50,7 @@ export type Health = {
   dbPath: string;
   app: string | null;
   schemaVersion: string | null;
+  policyCount: number;
   now: string;
 };
 
@@ -59,11 +61,16 @@ export function getHealth(): Health {
       | { value: string }
       | undefined)?.value ?? null;
 
+  const policyCount = (
+    db.prepare(`SELECT COUNT(*) AS n FROM policies`).get() as { n: number }
+  ).n;
+
   return {
     ok: true,
     dbPath: DB_PATH,
     app: row("app"),
-    schemaVersion: row("schema_version"),
+    schemaVersion: row("schema_version") ?? String(SCHEMA_VERSION),
+    policyCount,
     now: new Date().toISOString(),
   };
 }
