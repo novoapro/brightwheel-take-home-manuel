@@ -55,3 +55,30 @@ export function listWaitingEscalations(db: Database): Escalation[] {
     )
     .all() as Escalation[];
 }
+
+/** Mark an escalation answered (and, on capture, link the promoted policy). */
+export function answerEscalation(
+  db: Database,
+  input: {
+    id: string;
+    answer: string;
+    answeredBy: string;
+    promotedPolicyId?: string | null;
+  },
+): void {
+  db.prepare(
+    `UPDATE escalations
+        SET status = 'answered',
+            operator_answer = @answer,
+            answered_by = @answeredBy,
+            answered_at = @answered_at,
+            promoted_policy_id = @promotedPolicyId
+      WHERE id = @id`,
+  ).run({
+    id: input.id,
+    answer: input.answer,
+    answeredBy: input.answeredBy,
+    answered_at: new Date().toISOString(),
+    promotedPolicyId: input.promotedPolicyId ?? null,
+  });
+}

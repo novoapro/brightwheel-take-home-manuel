@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
  * The parent front desk chat (analysis/03 §3) — mobile-first, warm, one
  * continuous voice. Grounded answers show attribution chips + 👍/👎; uncertain
  * or case-specific turns show a warm relay-pending state ("checking with our
- * team…◐"). The staff reply streams into the thread live in M4.
+ * team…◐"), and the staff reply streams into the thread live over SSE, marked
+ * "✓ From our team".
  */
 
 type Citation = { id: string; title: string; source: string | null };
@@ -15,11 +16,13 @@ type ChatMessage = {
   key: string;
   role: "you" | "frontdesk";
   text: string;
-  provenance?: "grounded" | null;
+  provenance?: "grounded" | "staff" | null;
   citations?: Citation[];
   interactionId?: string;
   decision?: "answered" | "relayed";
-  pending?: boolean; // awaiting the server, or relay-pending
+  escalationId?: string | null;
+  answeredBy?: string;
+  pending?: boolean;
   relayPending?: boolean;
   feedback?: "up" | "down";
 };
@@ -39,23 +42,56 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const convo = useRef<{ conversationId?: string; sessionId?: string }>({});
+  const [conversationId, setConversationId] = useState<string>();
+  const sessionId = useRef<string | undefined>(undefined);
   const logRef = useRef<HTMLDivElement>(null);
   const started = messages.length > 0;
 
-  // Restore a session id so a returning parent keeps their thread (M4 relay).
+  // Restore a session id so a returning parent keeps their thread.
   useEffect(() => {
     try {
-      const s = localStorage.getItem(SESSION_KEY);
-      if (s) convo.current.sessionId = s;
+      sessionId.current = localStorage.getItem(SESSION_KEY) ?? undefined;
     } catch {
-      /* localStorage may be unavailable; fine — server will mint one */
+      /* localStorage may be unavailable — server will mint one */
     }
   }, []);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  // Live staff relay: once we have a conversation, subscribe to its SSE stream.
+  useEffect(() => {
+    if (!conversationId) return;
+    const es = new EventSource(
+      `/api/relay/stream?conversationId=${encodeURIComponent(conversationId)}`,
+    );
+    es.addEventListener("staff_message", (e) => {
+      const msg = JSON.parse((e as MessageEvent).data) as {
+        id: string;
+        escalationId: string;
+        text: string;
+        answeredBy: string;
+      };
+      setMessages((m) => {
+        if (m.some((x) => x.key === msg.id)) return m; // de-dupe on reconnect
+        return [
+          // the matching holding message is no longer "pending" — a person replied
+          ...m.map((x) =>
+            x.escalationId === msg.escalationId ? { ...x, relayPending: false } : x,
+          ),
+          {
+            key: msg.id,
+            role: "frontdesk" as const,
+            text: msg.text,
+            provenance: "staff" as const,
+            answeredBy: msg.answeredBy,
+          },
+        ];
+      });
+    });
+    return () => es.close();
+  }, [conversationId]);
 
   async function send(question: string) {
     const q = question.trim();
@@ -76,15 +112,15 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: q,
-          conversationId: convo.current.conversationId,
-          sessionId: convo.current.sessionId,
+          conversationId,
+          sessionId: sessionId.current,
         }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? "Something went wrong.");
 
-      convo.current.conversationId = data.conversationId;
-      convo.current.sessionId = data.sessionId;
+      setConversationId(data.conversationId);
+      sessionId.current = data.sessionId;
       try {
         localStorage.setItem(SESSION_KEY, data.sessionId);
       } catch {
@@ -102,12 +138,13 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
                 citations: data.message.citations,
                 interactionId: data.interactionId,
                 decision: data.decision,
+                escalationId: data.message.escalationId,
                 relayPending: data.decision === "relayed",
               }
             : msg,
         ),
       );
-    } catch (err) {
+    } catch {
       setMessages((m) =>
         m.map((msg) =>
           msg.key === pendingKey
@@ -120,7 +157,6 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
             : msg,
         ),
       );
-      void err;
     } finally {
       setBusy(false);
     }
@@ -128,9 +164,7 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
 
   async function rate(msg: ChatMessage, feedback: "up" | "down") {
     if (!msg.interactionId || msg.feedback) return;
-    setMessages((m) =>
-      m.map((x) => (x.key === msg.key ? { ...x, feedback } : x)),
-    );
+    setMessages((m) => m.map((x) => (x.key === msg.key ? { ...x, feedback } : x)));
     try {
       await fetch("/api/feedback", {
         method: "POST",
@@ -159,9 +193,7 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
         aria-label="Conversation with the front desk"
         className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5"
       >
-        {!started && (
-          <Welcome onPick={send} />
-        )}
+        {!started && <Welcome onPick={send} />}
 
         {messages.map((m) =>
           m.role === "you" ? (
@@ -244,11 +276,21 @@ function FrontDeskBubble({
   m: ChatMessage;
   onRate: (m: ChatMessage, f: "up" | "down") => void;
 }) {
+  const isStaff = m.provenance === "staff";
   return (
     <div className="flex max-w-[90%] flex-col gap-2 self-start">
+      {isStaff && (
+        <div className="ml-8 flex items-center gap-1.5 text-xs font-medium text-brand-strong">
+          ✓ From our team{m.answeredBy ? ` · ${m.answeredBy}` : ""}
+        </div>
+      )}
       <div className="flex items-start gap-2">
-        <span className="mt-0.5 text-lg" aria-hidden>🌰</span>
-        <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ring-border">
+        <span className="mt-0.5 text-lg" aria-hidden>{isStaff ? "👤" : "🌰"}</span>
+        <div
+          className={`rounded-2xl rounded-tl-sm px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ${
+            isStaff ? "bg-brand/10 ring-brand/30" : "bg-surface ring-border"
+          }`}
+        >
           {m.pending ? (
             <span className="text-muted">
               {m.text} <span className="animate-softpulse">◐</span>
@@ -274,7 +316,7 @@ function FrontDeskBubble({
         </div>
       )}
 
-      {/* Relay-pending — checking with our team, in real time (M4 streams the reply) */}
+      {/* Relay-pending — checking with our team, in real time */}
       {m.relayPending && (
         <div className="ml-8 flex items-center gap-1.5 text-xs text-muted">
           <span className="animate-softpulse" aria-hidden>◐</span>
@@ -292,20 +334,8 @@ function FrontDeskBubble({
           ) : (
             <>
               <span className="text-xs text-muted">Helpful?</span>
-              <button
-                onClick={() => onRate(m, "up")}
-                aria-label="Helpful"
-                className="rounded-full px-1.5 py-0.5 hover:bg-you"
-              >
-                👍
-              </button>
-              <button
-                onClick={() => onRate(m, "down")}
-                aria-label="Not helpful"
-                className="rounded-full px-1.5 py-0.5 hover:bg-you"
-              >
-                👎
-              </button>
+              <button onClick={() => onRate(m, "up")} aria-label="Helpful" className="rounded-full px-1.5 py-0.5 hover:bg-you">👍</button>
+              <button onClick={() => onRate(m, "down")} aria-label="Not helpful" className="rounded-full px-1.5 py-0.5 hover:bg-you">👎</button>
             </>
           )}
         </div>

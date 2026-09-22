@@ -77,6 +77,21 @@ export function getAudit(db: Database, id: string): AuditRecord | null {
   return { ...row, cited_sources: JSON.parse(row.cited_sources) as string[] };
 }
 
+/** The conversation an interaction belongs to — for routing a staff relay. */
+export function getAuditContext(
+  db: Database,
+  interactionId: string,
+): { conversation_id: string; session_id: string } | null {
+  const row = db
+    .prepare(
+      `SELECT conversation_id, session_id FROM interaction_audit WHERE id = ?`,
+    )
+    .get(interactionId) as
+    | { conversation_id: string; session_id: string }
+    | undefined;
+  return row ?? null;
+}
+
 /** Record a parent 👍/👎 on the answer for this interaction (analysis/05 Tier 4). */
 export function setParentFeedback(
   db: Database,
