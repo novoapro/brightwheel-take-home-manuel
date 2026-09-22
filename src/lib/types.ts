@@ -1,5 +1,5 @@
 /**
- * Domain types for the AI Front Desk data model.
+ * Domain types for the Front Desk data model.
  * Source of truth: analysis/01-data-and-knowledge-model.md §2 and the canonical
  * definitions in analysis/09-plan-review-and-consistency.md §4.
  *
@@ -101,9 +101,15 @@ export interface Settings {
   active_provider: Provider;
 }
 
-/** Center — identity + globally-relevant facts (analysis/01 §2.1). */
+/**
+ * Center — identity + globally-relevant facts (analysis/01 §2.1).
+ * Also the tenant brand layer (analysis/10 §4): everything a parent sees is
+ * configured here from the control center, so nothing center-specific is
+ * hardcoded — Front Desk is one component serving many centers.
+ */
 export interface Center {
   id: string;
+  /** The BUSINESS name, e.g. "Little Acorns Early Learning Center". */
   name: string;
   city: string;
   state: string;
@@ -112,4 +118,18 @@ export interface Center {
   hours_general: string;
   age_groups: Array<{ group: string; range: string }>;
   persona_notes: string;
+  /** The ASSISTANT/front-desk name parents read, e.g. "Little Acorns Front Desk". */
+  display_name: string;
+  /** The one tenant accent hex, e.g. "#4f7a5b"; drives the --brand* tokens. */
+  brand_color: string;
+  /** Uploaded institution logo (data URI, PoC); with none, the app icon is used. */
+  logo?: string;
+  /** The parent greeting; falls back to the built-in copy when empty. */
+  welcome_message?: string;
+}
+
+/** Compute the front-desk name, falling back to "<business> Front Desk". */
+export function centerDisplayName(center: Pick<Center, "name" | "display_name">): string {
+  const dn = center.display_name?.trim();
+  return dn && dn.length > 0 ? dn : `${center.name} Front Desk`;
 }

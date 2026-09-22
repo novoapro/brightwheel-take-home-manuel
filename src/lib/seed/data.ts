@@ -29,6 +29,13 @@ export const CENTER: Center = {
   ],
   persona_notes:
     "Warm, plain-spoken, and reassuring — a caring front-desk lead who knows every family by name. Never a cold IVR or a scripted chatbot.",
+  // Brand layer (analysis/10 §4). The green + acorn now come from tenant config,
+  // so re-theming Little Acorns live in the control center is a one-click
+  // white-label moment — "watch this become another center."
+  display_name: "Little Acorns Front Desk",
+  brand_color: "#4f7a5b", // the center's sage green — now tenant-owned, not hardcoded
+  welcome_message:
+    "Hi! I can help with **hours, tuition, sick-day policy, meals, and tours** — with answers straight from our center. What can I help you with?",
 };
 
 export const POLICIES: PolicyInput[] = [

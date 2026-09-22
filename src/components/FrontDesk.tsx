@@ -1,6 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import BrandMark from "@/components/BrandMark";
+import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
+import { renderMarkdownLite } from "@/lib/markdown";
+
+/** The tenant identity the parent surface renders (analysis/10 §4). */
+export type CenterBrand = {
+  name: string;
+  displayName: string;
+  logo?: string;
+  welcomeMessage?: string;
+};
+
+const DEFAULT_WELCOME =
+  "Hi! I can help with **hours, tuition, sick-day policy, meals, and tours** — with answers straight from our center. What can I help you with?";
 
 /**
  * The parent front desk chat (analysis/03 §3) — mobile-first, warm, one
@@ -38,7 +52,7 @@ const STARTERS = [
 const SESSION_KEY = "la_frontdesk_session";
 const uid = () => Math.random().toString(36).slice(2);
 
-export default function FrontDesk({ centerName }: { centerName: string }) {
+export default function FrontDesk({ center }: { center: CenterBrand }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -177,12 +191,12 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col md:border-x md:border-border">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <span className="text-2xl" aria-hidden>🌰</span>
+        <BrandMark logo={center.logo} />
         <div className="flex-1">
-          <h1 className="text-sm font-semibold leading-tight">{centerName}</h1>
-          <p className="text-xs text-muted">Front Desk</p>
+          <h1 className="text-sm font-semibold leading-tight">{center.name}</h1>
+          <p className="text-xs text-muted">{center.displayName}</p>
         </div>
         <a href="/handbook" className="text-xs text-brand-strong hover:underline">
           Handbook
@@ -196,7 +210,9 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
         aria-label="Conversation with the front desk"
         className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5"
       >
-        {!started && <Welcome onPick={send} />}
+        {!started && (
+          <Welcome onPick={send} welcome={center.welcomeMessage || DEFAULT_WELCOME} />
+        )}
 
         {messages.map((m) =>
           m.role === "you" ? (
@@ -206,7 +222,12 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
               </div>
             </div>
           ) : (
-            <FrontDeskBubble key={m.key} m={m} onRate={rate} />
+            <FrontDeskBubble
+              key={m.key}
+              m={m}
+              onRate={rate}
+              logo={center.logo}
+            />
           ),
         )}
       </div>
@@ -243,17 +264,19 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
           ▷
         </button>
       </form>
+
+      <PoweredByBrightwheel />
     </div>
   );
 }
 
-function Welcome({ onPick }: { onPick: (q: string) => void }) {
+function Welcome({ onPick, welcome }: { onPick: (q: string) => void; welcome: string }) {
   return (
     <div className="flex flex-col gap-4 pt-2">
-      <p className="text-[15px] leading-relaxed text-foreground">
-        Hi! I can help with <b>hours, tuition, sick-day policy, meals, and tours</b> —
-        with answers straight from our center. What can I help you with?
-      </p>
+      <div
+        className="text-[15px] leading-relaxed text-foreground [&_strong]:font-semibold"
+        dangerouslySetInnerHTML={{ __html: renderMarkdownLite(welcome) }}
+      />
       <div className="flex flex-col gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted">
           Common questions
@@ -276,9 +299,11 @@ function Welcome({ onPick }: { onPick: (q: string) => void }) {
 function FrontDeskBubble({
   m,
   onRate,
+  logo,
 }: {
   m: ChatMessage;
   onRate: (m: ChatMessage, f: "up" | "down") => void;
+  logo?: string;
 }) {
   const isStaff = m.provenance === "staff";
   return (
@@ -289,7 +314,11 @@ function FrontDeskBubble({
         </div>
       )}
       <div className="flex items-start gap-2">
-        <span className="mt-0.5 text-lg" aria-hidden>{isStaff ? "👤" : "🌰"}</span>
+        {isStaff ? (
+          <span className="mt-0.5 text-lg" aria-hidden>👤</span>
+        ) : (
+          <BrandMark logo={logo} className="mt-0.5" imgSize={22} />
+        )}
         <div
           className={`rounded-2xl rounded-tl-sm px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ${
             isStaff ? "bg-brand/10 ring-brand/30" : "bg-surface ring-border"

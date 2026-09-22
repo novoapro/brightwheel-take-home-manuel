@@ -1,31 +1,41 @@
 @import "tailwindcss";
 
-/* Warm, calm palette — acorn/sage from the center persona (analysis/03 §6b). */
+/*
+ * Brightwheel base look (analysis/10 §3.1) — the Layer-A design system shared by
+ * both surfaces: a plain cool-neutral page background with white cards floating
+ * on top, soft borders, gentle shadow, generous radii, and blurple as the
+ * *default* accent. The accent tokens (--brand*) are overridden per-tenant at
+ * runtime from center.brand_color (see layout.tsx / lib/theme.ts); the neutral
+ * structure tokens below never change.
+ */
 :root {
-  --background: #fbf8f3; /* warm cream */
-  --foreground: #2b2118;
+  --background: #f6f7fb; /* cool near-white page */
+  --foreground: #1b1c22;
   --surface: #ffffff; /* cards, bubbles */
-  --muted: #6b6155;
-  --border: #ece3d5;
-  --brand: #4f7a5b; /* sage green */
-  --brand-strong: #3d6349;
+  --muted: #656a76;
+  --border: #e6e8ef;
+  --brand: #6c4ee8; /* Brightwheel blurple (default accent) */
+  --brand-strong: #5638c9;
   --brand-fg: #ffffff;
-  --acorn: #8a5a30;
-  --you-bubble: #eef3ec; /* parent's own message */
+  --you-bubble: #eef0f6; /* parent's own message — cool neutral */
+  --radius: 0.75rem; /* generous Brightwheel roundness */
+  --card-shadow: 0 1px 2px rgba(27, 28, 34, 0.04), 0 4px 12px rgba(27, 28, 34, 0.05);
+  /* The Powered-by wordmark renders in Brightwheel's website font stack only. */
+  --font-brand-wordmark: "AvenirNext", "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #17130e;
-    --foreground: #f0e9df;
-    --surface: #221c15;
-    --muted: #a89c8b;
-    --border: #362c21;
-    --brand: #6f9d7c;
-    --brand-strong: #5b8768;
-    --brand-fg: #10140f;
-    --acorn: #c68a53;
-    --you-bubble: #2a241b;
+    --background: #131419;
+    --foreground: #edeef2;
+    --surface: #1c1e26;
+    --muted: #9aa0ad;
+    --border: #2b2e38;
+    --brand: #8f79ef; /* lightened blurple for dark */
+    --brand-strong: #a693f3;
+    --brand-fg: #14121f;
+    --you-bubble: #262933;
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -38,10 +48,12 @@
   --color-brand: var(--brand);
   --color-brand-strong: var(--brand-strong);
   --color-brand-fg: var(--brand-fg);
-  --color-acorn: var(--acorn);
   --color-you: var(--you-bubble);
+  --radius-card: var(--radius);
+  --shadow-card: var(--card-shadow);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-wordmark: var(--font-brand-wordmark);
 }
 
 body {

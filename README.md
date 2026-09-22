@@ -1,14 +1,16 @@
-# Little Acorns AI Front Desk
+# Front Desk
 
-A mobile-first proof-of-concept **AI Front Desk** for an independent early-education center. Parents get fast, **grounded, attributed** answers about hours, tuition, sick-day policy, meals, and tours; when a question is uncertain or case-specific, the front desk **relays to staff in real time** (one voice, in-thread) rather than guessing — and a staff answer can be captured into the source of truth so deflection compounds.
+**Front Desk** — a mobile-first proof-of-concept front desk **Brightwheel ships as a component** for its early-education centers. It's multi-tenant by design: the same code renders any center, and everything a parent sees — the business name, front-desk name, logo, one accent color, and the welcome copy — is configured per center from the control center. So the buyer sees *Brightwheel* and the parent sees *their daycare*, from one codebase.
 
-Two surfaces, one codebase:
+Parents get fast, **grounded, attributed** answers about hours, tuition, sick-day policy, meals, and tours; when a question is uncertain or case-specific, the front desk **relays to staff in real time** (one voice, in-thread) rather than guessing — and a staff answer can be captured into the source of truth so deflection compounds.
 
-- **`/` — Parent front desk.** Anonymous chat with guided starters, attribution chips, and 👍/👎.
-- **`/admin` — Operator control center.** Dashboard (hours saved, containment, groundedness, top gaps), live-relay queue, source-of-truth editor, and settings (caution dial + provider toggle). Gated by a mock passcode.
+Two surfaces, one codebase (both on the Brightwheel base look — plain background + white cards + blurple, tinted by the tenant's accent):
+
+- **`/` — Parent front desk.** Anonymous chat with guided starters, attribution chips, and 👍/👎; branded per center.
+- **`/admin` — Operator control center.** Dashboard (hours saved, containment, groundedness, top gaps), live-relay queue, source-of-truth editor, a **Branding tab** (edit everything parents see, beside a live preview), and settings (caution dial + provider toggle). Gated by a mock passcode.
 - **`/handbook` — Read-only family handbook**, derived from the published policies the assistant cites.
 
-The full design lives in [`analysis/`](analysis/) (stages 00–09); [`CLAUDE.md`](CLAUDE.md) is the working brief.
+The full design lives in [`analysis/`](analysis/) (stages 00–10; stage 10 covers the component reframe + per-center theming); [`CLAUDE.md`](CLAUDE.md) is the working brief.
 
 ## Stack
 

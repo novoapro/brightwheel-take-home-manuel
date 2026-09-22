@@ -4,6 +4,8 @@ import { getCenter } from "@/lib/repo/center";
 import { listPublishedPolicies } from "@/lib/repo/policies";
 import { renderMarkdownLite } from "@/lib/markdown";
 import { INTENTS, type Intent } from "@/lib/types";
+import BrandMark from "@/components/BrandMark";
+import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
 
 // The parent-facing read-only handbook — the single source of truth, derived
 // from PolicyRecords (analysis/01 §2). Attribution chips in the chat link here
@@ -27,9 +29,9 @@ export default function HandbookPage() {
     <main className="mx-auto w-full max-w-2xl px-5 py-8">
       <header className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-2xl" aria-hidden>🌰</span>
+          <BrandMark logo={center?.logo} />
           <div>
-            <h1 className="text-lg font-semibold">{center?.name ?? "Little Acorns"} — Family Handbook</h1>
+            <h1 className="text-lg font-semibold">{center?.name ?? "Family"} — Family Handbook</h1>
             <p className="text-xs text-muted">The answers behind our front desk.</p>
           </div>
         </div>
@@ -70,6 +72,8 @@ export default function HandbookPage() {
           </section>
         );
       })}
+
+      <PoweredByBrightwheel />
     </main>
   );
 }

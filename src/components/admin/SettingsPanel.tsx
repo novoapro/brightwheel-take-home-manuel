@@ -40,7 +40,7 @@ export default function SettingsPanel({ passcode }: { passcode: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <section>
+      <section className="rounded-xl border border-border bg-surface p-4 shadow-card md:p-5">
         <h2 className="mb-1 text-sm font-semibold">Front-desk caution level</h2>
         <p className="mb-3 text-xs text-muted">
           How readily the front desk hands off to you when it isn&apos;t certain.
@@ -72,7 +72,7 @@ export default function SettingsPanel({ passcode }: { passcode: string }) {
         <b> always</b> go to a person — this floor can&apos;t be lowered.
       </div>
 
-      <section>
+      <section className="rounded-xl border border-border bg-surface p-4 shadow-card md:p-5">
         <h2 className="mb-1 text-sm font-semibold">AI provider (for testing)</h2>
         <p className="mb-3 text-xs text-muted">
           Swap the model behind the same prompt and guardrails; compare results on the Dashboard.

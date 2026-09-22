@@ -14,6 +14,9 @@ const center: Center = {
   hours_general: "Mon–Fri 7–6",
   age_groups: [{ group: "Infant", range: "6 wks–12 mo" }],
   persona_notes: "Warm.",
+  display_name: "Little Acorns Front Desk",
+  brand_color: "#4f7a5b",
+  welcome_message: "Hi!",
 };
 
 let db: Database;
@@ -32,6 +35,20 @@ describe("center repo", () => {
     expect(c.age_groups).toEqual([{ group: "Infant", range: "6 wks–12 mo" }]);
     expect(Array.isArray(c.age_groups)).toBe(true);
     expect(c.name).toBe("Little Acorns");
+  });
+
+  it("carries the brand layer and round-trips optional fields as undefined", () => {
+    upsertCenter(db, { ...center, logo: undefined });
+    const c = getCenter(db)!;
+    expect(c.brand_color).toBe("#4f7a5b");
+    expect(c.display_name).toBe("Little Acorns Front Desk");
+    expect(c.logo).toBeUndefined();
+  });
+
+  it("persists an uploaded logo data URI", () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    upsertCenter(db, { ...center, logo });
+    expect(getCenter(db)!.logo).toBe(logo);
   });
 
   it("upserts in place (single instance)", () => {

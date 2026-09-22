@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 
 /**
- * The full relational schema for the AI Front Desk (M1).
+ * The full relational schema for Front Desk (M1).
  *
  * Entities map 1:1 to analysis/01-data-and-knowledge-model.md §2:
  *   center, policies (PolicyRecord), conversations, messages,
@@ -17,7 +17,7 @@ import type { Database } from "better-sqlite3";
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -26,17 +26,24 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
--- center: single-row identity for the fictional center
+-- center: single-row tenant identity + brand layer (analysis/10 §4).
+-- Everything a parent sees (display_name, brand_color, logo, welcome) is
+-- configured here — the Front Desk component hardcodes nothing center-specific.
+-- With no uploaded logo, surfaces fall back to the app's own icon.
 CREATE TABLE IF NOT EXISTS center (
-  id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  city          TEXT NOT NULL,
-  state         TEXT NOT NULL,
-  phone         TEXT NOT NULL,
-  timezone      TEXT NOT NULL,
-  hours_general TEXT NOT NULL,
-  age_groups    TEXT NOT NULL,        -- JSON array
-  persona_notes TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  city            TEXT NOT NULL,
+  state           TEXT NOT NULL,
+  phone           TEXT NOT NULL,
+  timezone        TEXT NOT NULL,
+  hours_general   TEXT NOT NULL,
+  age_groups      TEXT NOT NULL,        -- JSON array
+  persona_notes   TEXT NOT NULL,
+  display_name    TEXT NOT NULL DEFAULT '',        -- assistant/front-desk name
+  brand_color     TEXT NOT NULL DEFAULT '#6c4ee8', -- tenant accent; drives --brand*
+  logo            TEXT,                             -- uploaded logo as a data URI
+  welcome_message TEXT                              -- parent greeting override
 );
 
 -- policies: the atomic, citable source of truth (PolicyRecord)

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A **take-home interview project for Brightwheel**: build a hosted, mobile-friendly proof-of-concept of an **"AI Front Desk"** for early-education centers (daycares / pre-Ks). Deliverable is a hosted URL + a <1-page doc (or <2-min video). This is a *working proof of concept*, not production code — optimize for demonstrating vision, judgment, and taste over completeness or hardening.
+A **take-home interview project for Brightwheel**: build a hosted, mobile-friendly proof-of-concept **Front Desk** for early-education centers (daycares / pre-Ks) — framed not as a one-off app but as **a component Brightwheel ships across many centers** (multi-tenant by design; everything a parent sees is per-center config, on a shared Brightwheel base look with a per-center accent — see [analysis/10](analysis/10-front-desk-rebrand-and-theming.md)). Deliverable is a hosted URL + a <1-page doc (or <2-min video). This is a *working proof of concept*, not production code — optimize for demonstrating vision, judgment, and taste over completeness or hardening.
 
-Full brief: [assigment/take-home-project.md](assigment/take-home-project.md). The business-domain primer's key points are distilled in "Domain context" below. **The full plan lives in [analysis/](analysis/) (stages 00–09)** — read it before building; it is the source of truth for every decision.
+Full brief: [assigment/take-home-project.md](assigment/take-home-project.md). The business-domain primer's key points are distilled in "Domain context" below. **The full plan lives in [analysis/](analysis/) (stages 00–10)** — read it before building; it is the source of truth for every decision.
 
 ## Domain context (from the primer — use it to make sharper product calls)
 
 - **Brightwheel is vertical SaaS for early childhood** (the years before kindergarten): daycare / preschool / nursery / after-school. Same playbook as Toast, ServiceTitan, MINDBODY — replacing paper + spreadsheets + a tangle of 15+ disconnected systems with one integrated product.
-- **The market is huge and fragmented:** 850k+ providers in the U.S., ~$175B industry, and **~90% are independent providers** — small businesses, not big chains. Global footprint. So our fictional center should read as an *independent SMB*, and the AI Front Desk's value prop is "out-of-the-box, works for a center that has no IT staff."
+- **The market is huge and fragmented:** 850k+ providers in the U.S., ~$175B industry, and **~90% are independent providers** — small businesses, not big chains. Global footprint. So our fictional center should read as an *independent SMB*, and the Front Desk's value prop is "out-of-the-box, works for a center that has no IT staff."
 - **Three user groups, each with a distinct stake:**
   - **Owner/Administrator** — runs the day-to-day, *usually the buyer*. This is who the operator control center serves; frame ROI as hours saved and load lifted off a busy owner.
   - **Teachers** — heaviest daily mobile users; interact with everyone.
