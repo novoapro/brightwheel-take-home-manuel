@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
+    "@google/genai": "^2.24.0",
     "better-sqlite3": "^13.0.3",
     "next": "16.3.5",
     "react": "19.2.8",

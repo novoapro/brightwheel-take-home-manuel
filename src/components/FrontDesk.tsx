@@ -180,10 +180,13 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <span className="text-2xl" aria-hidden>🌰</span>
-        <div>
+        <div className="flex-1">
           <h1 className="text-sm font-semibold leading-tight">{centerName}</h1>
           <p className="text-xs text-muted">Front Desk</p>
         </div>
+        <a href="/handbook" className="text-xs text-brand-strong hover:underline">
+          Handbook
+        </a>
       </header>
 
       <div
@@ -233,6 +236,7 @@ export default function FrontDesk({ centerName }: { centerName: string }) {
         <button
           type="submit"
           disabled={busy || !input.trim()}
+          aria-busy={busy}
           className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-brand-fg disabled:opacity-40"
           aria-label="Send"
         >

@@ -15,6 +15,7 @@ function audit(over: Partial<AuditMetricRow>): AuditMetricRow {
     parent_feedback: null,
     cited_count: 1,
     groundedness: null,
+    provider: "claude",
     timestamp: "2026-09-20T00:00:00Z",
     ...over,
   };
@@ -89,6 +90,27 @@ describe("aggregate (pure)", () => {
 
   it("groundedness is null when nothing has been judged", () => {
     expect(aggregate([audit({ groundedness: null })], [], 0, 0).groundedness).toBeNull();
+  });
+
+  it("slices by provider only when more than one has handled traffic", () => {
+    const single = aggregate([audit({ provider: "claude" })], [], 0, 0);
+    expect(single.byProvider).toEqual([]);
+
+    const both = aggregate(
+      [
+        audit({ provider: "claude", decision: "answered", groundedness: 0.9 }),
+        audit({ provider: "claude", decision: "escalated" }),
+        audit({ provider: "gemini", decision: "answered", groundedness: 0.8 }),
+      ],
+      [],
+      0,
+      0,
+    );
+    expect(both.byProvider.map((p) => p.provider)).toEqual(["claude", "gemini"]);
+    const claude = both.byProvider.find((p) => p.provider === "claude")!;
+    expect(claude.total).toBe(2);
+    expect(claude.containmentRate).toBeCloseTo(0.5);
+    expect(both.byProvider.find((p) => p.provider === "gemini")!.groundedness).toBeCloseTo(0.8);
   });
 
   it("handles an empty log without dividing by zero", () => {

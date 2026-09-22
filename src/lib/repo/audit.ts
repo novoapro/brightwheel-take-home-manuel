@@ -65,6 +65,8 @@ export interface AuditMetricRow {
   cited_count: number;
   /** Async Haiku judge groundedness (analysis/04 §7), null until scored. */
   groundedness: number | null;
+  /** Which provider handled it — enables the Claude vs. Gemini A/B slice. */
+  provider: string | null;
   timestamp: string;
 }
 
@@ -72,7 +74,7 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
   const rows = db
     .prepare(
       `SELECT decision, decision_reason, detected_intent, parent_feedback,
-              cited_sources, judge_scores, timestamp
+              cited_sources, judge_scores, provider, timestamp
          FROM interaction_audit`,
     )
     .all() as Array<{
@@ -82,6 +84,7 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
     parent_feedback: "up" | "down" | null;
     cited_sources: string;
     judge_scores: string | null;
+    provider: string | null;
     timestamp: string;
   }>;
   return rows.map((r) => ({
@@ -93,6 +96,7 @@ export function listAuditMetrics(db: Database): AuditMetricRow[] {
     groundedness: r.judge_scores
       ? ((JSON.parse(r.judge_scores) as { groundedness?: number }).groundedness ?? null)
       : null,
+    provider: r.provider,
     timestamp: r.timestamp,
   }));
 }

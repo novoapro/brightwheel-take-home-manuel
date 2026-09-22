@@ -17,6 +17,7 @@ type Metrics = {
   capturedPolicies: number;
   waiting: number;
   topGaps: { question: string; count: number; intent: string | null }[];
+  byProvider: { provider: string; total: number; containmentRate: number; groundedness: number | null }[];
 };
 
 const pct = (r: number) => `${Math.round(r * 100)}%`;
@@ -85,6 +86,32 @@ export default function Dashboard({
           </ul>
         )}
       </section>
+
+      {m.byProvider.length > 0 && (
+        <section className="rounded-xl border border-border bg-surface p-4">
+          <h2 className="mb-2 text-sm font-semibold">Provider A/B</h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted">
+                <th className="py-1">Provider</th>
+                <th>Traffic</th>
+                <th>Containment</th>
+                <th>Groundedness</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.byProvider.map((p) => (
+                <tr key={p.provider} className="border-t border-border">
+                  <td className="py-1.5 font-medium">{p.provider}</td>
+                  <td>{p.total}</td>
+                  <td>{pct(p.containmentRate)}</td>
+                  <td>{p.groundedness == null ? "—" : pct(p.groundedness)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {m.waiting > 0 && (
         <p className="text-sm text-red-600">⚠ {m.waiting} escalation{m.waiting === 1 ? "" : "s"} waiting — see Live relay.</p>

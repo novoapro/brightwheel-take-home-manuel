@@ -48,6 +48,39 @@ export interface DashboardMetrics {
   waiting: number;
   topGaps: TopGap[];
   byIntent: { intent: string; answered: number; escalated: number }[];
+  /** A/B slice — only present when more than one provider has handled traffic. */
+  byProvider: ProviderSlice[];
+}
+
+export interface ProviderSlice {
+  provider: string;
+  total: number;
+  containmentRate: number;
+  groundedness: number | null;
+}
+
+function providerSlices(audits: AuditMetricRow[]): ProviderSlice[] {
+  const map = new Map<string, AuditMetricRow[]>();
+  for (const a of audits) {
+    const key = a.provider ?? "unknown";
+    (map.get(key) ?? map.set(key, []).get(key)!).push(a);
+  }
+  if (map.size < 2) return []; // no A/B to show with a single provider
+  return [...map.entries()]
+    .map(([provider, rows]) => {
+      const answered = rows.filter((r) => r.decision === "answered").length;
+      const scored = rows.filter((r) => r.groundedness != null);
+      return {
+        provider,
+        total: rows.length,
+        containmentRate: ratio(answered, rows.length),
+        groundedness:
+          scored.length === 0
+            ? null
+            : scored.reduce((s, r) => s + (r.groundedness ?? 0), 0) / scored.length,
+      };
+    })
+    .sort((a, b) => a.provider.localeCompare(b.provider));
 }
 
 const normalizeQuestion = (q: string) => q.trim().toLowerCase().replace(/\s+/g, " ");
@@ -128,6 +161,7 @@ export function aggregate(
     waiting,
     topGaps,
     byIntent,
+    byProvider: providerSlices(audits),
   };
 }
 

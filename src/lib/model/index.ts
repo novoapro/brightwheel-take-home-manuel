@@ -1,19 +1,18 @@
 import type { Provider } from "../types";
 import { ClaudeFrontDeskModel } from "./claude";
+import { GeminiFrontDeskModel } from "./gemini";
 import type { FrontDeskModel } from "./types";
 
 /**
- * Provider factory. Claude is the default and only shipped implementation in
- * v1; the Gemini implementation lands in M7 behind this same seam, so call
- * sites never change. An unknown/unbuilt provider falls back to Claude.
+ * Provider factory. Claude is the default; Gemini (3.x Flash) is the A/B toggle
+ * behind the same seam, so call sites never change. Both ship as real
+ * implementations — provider portability you can measure, not just assert.
  */
 export function getModel(provider: Provider = "claude"): FrontDeskModel {
   switch (provider) {
-    case "claude":
-      return new ClaudeFrontDeskModel();
     case "gemini":
-      // M7 — GeminiFrontDeskModel. Fall back to Claude until it ships.
-      return new ClaudeFrontDeskModel();
+      return new GeminiFrontDeskModel();
+    case "claude":
     default:
       return new ClaudeFrontDeskModel();
   }
