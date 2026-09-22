@@ -56,6 +56,41 @@ export function insertAudit(db: Database, input: AuditInput): string {
   return input.id;
 }
 
+/** A slim audit projection for metrics aggregation (analysis/05 §3). */
+export interface AuditMetricRow {
+  decision: "answered" | "escalated";
+  decision_reason: string;
+  detected_intent: string | null;
+  parent_feedback: "up" | "down" | null;
+  cited_count: number;
+  timestamp: string;
+}
+
+export function listAuditMetrics(db: Database): AuditMetricRow[] {
+  const rows = db
+    .prepare(
+      `SELECT decision, decision_reason, detected_intent, parent_feedback,
+              cited_sources, timestamp
+         FROM interaction_audit`,
+    )
+    .all() as Array<{
+    decision: "answered" | "escalated";
+    decision_reason: string;
+    detected_intent: string | null;
+    parent_feedback: "up" | "down" | null;
+    cited_sources: string;
+    timestamp: string;
+  }>;
+  return rows.map((r) => ({
+    decision: r.decision,
+    decision_reason: r.decision_reason,
+    detected_intent: r.detected_intent,
+    parent_feedback: r.parent_feedback,
+    cited_count: (JSON.parse(r.cited_sources) as string[]).length,
+    timestamp: r.timestamp,
+  }));
+}
+
 export interface AuditRecord {
   id: string;
   decision: "answered" | "escalated";

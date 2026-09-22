@@ -151,3 +151,12 @@ export function countPolicies(db: Database): number {
   return (db.prepare(`SELECT COUNT(*) AS n FROM policies`).get() as { n: number })
     .n;
 }
+
+/** Count policies born from the capture loop (origin = captured). */
+export function countCapturedPolicies(db: Database): number {
+  return (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM policies WHERE origin = 'captured'`)
+      .get() as { n: number }
+  ).n;
+}

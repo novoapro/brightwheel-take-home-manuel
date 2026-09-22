@@ -305,13 +305,16 @@ function FrontDeskBubble({
       {m.citations && m.citations.length > 0 && (
         <div className="ml-8 flex flex-wrap gap-1.5">
           {m.citations.map((c) => (
-            <span
+            <a
               key={c.id}
+              href={`/handbook#${c.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
               title={c.source ?? undefined}
-              className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-1 text-xs text-brand-strong"
+              className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-1 text-xs text-brand-strong hover:bg-brand/20"
             >
-              📎 per our Handbook — {c.title}
-            </span>
+              📎 per our Handbook — {c.title} ›
+            </a>
           ))}
         </div>
       )}

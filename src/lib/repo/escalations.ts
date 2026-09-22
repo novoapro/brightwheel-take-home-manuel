@@ -56,6 +56,13 @@ export function listWaitingEscalations(db: Database): Escalation[] {
     .all() as Escalation[];
 }
 
+/** Every escalation (any status) — used for gap analysis on the dashboard. */
+export function listAllEscalations(db: Database): Escalation[] {
+  return db
+    .prepare(`SELECT * FROM escalations ORDER BY created_at, id`)
+    .all() as Escalation[];
+}
+
 /** Mark an escalation answered (and, on capture, link the promoted policy). */
 export function answerEscalation(
   db: Database,
