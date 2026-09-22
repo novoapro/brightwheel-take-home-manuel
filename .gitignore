@@ -1,19 +1,34 @@
 # macOS
 .DS_Store
 
-# Node (for the app we'll scaffold next)
-node_modules/
-.next/
-dist/
-build/
-*.log
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
 
-# Env / secrets
+# next.js / build
+/.next/
+/out/
+/build
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# testing
+/coverage
+
+# logs
+*.log
+npm-debug.log*
+
+# env / secrets
 .env
 .env.*
 !.env.example
+*.pem
 
-# Local SQLite data
+# local SQLite data (the app's DB lives on the Railway volume in prod)
+/data/
 *.sqlite
 *.sqlite3
 *.db

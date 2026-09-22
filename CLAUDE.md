@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **take-home interview project for Brightwheel**: build a hosted, mobile-friendly proof-of-concept of an **"AI Front Desk"** for early-education centers (daycares / pre-Ks). Deliverable is a hosted URL + a <1-page doc (or <2-min video). This is a *working proof of concept*, not production code — optimize for demonstrating vision, judgment, and taste over completeness or hardening.
 
-Full brief: [take-home-project.md](take-home-project.md). Business domain primer: [business-primer.md](business-primer.md).
+Full brief: [assigment/take-home-project.md](assigment/take-home-project.md). The business-domain primer's key points are distilled in "Domain context" below. **The full plan lives in [analysis/](analysis/) (stages 00–09)** — read it before building; it is the source of truth for every decision.
 
 ## Domain context (from the primer — use it to make sharper product calls)
 
@@ -38,15 +38,46 @@ Evaluation axes: **scope & completeness, persuasiveness (would a team fund this?
 ## Guiding principles for our decisions
 
 - **Less is more.** A smaller set of intents handled *extremely* well beats broad-but-shallow. Prefer depth and edge-case handling (policy logic, escalation) — this is our chosen edge unless we deliberately change it.
-- **Trust is the product.** Answers must be *grounded* in the center's own policies and visibly attributable ("per the handbook: …"). Never hallucinate a policy. When grounding is thin or the topic is sensitive, escalate — a graceful handoff beats a confident wrong answer.
+- **Trust is the product.** Answers must be *grounded* in the center's own policies and visibly attributable ("per the handbook: …"). Never hallucinate a policy. When grounding is thin or the topic is sensitive, escalate — a graceful **live staff relay** (front desk stays one voice; a staff member answers into the same thread in real time) beats a confident wrong answer.
 - **Minimize human effort, keep quality high.** Every feature should measurably reduce front-desk load while preserving the warmth parents expect. The operator's curation loop (see struggles → fix source of truth) is what makes deflection compound over time — treat it as core, not a dashboard afterthought.
 - **Mobile-first, web.** Parents ask from a phone. Design and test at phone widths first.
 - **Fictional data only.** Invent a center, its policies, and schedules. No real personal data. A small structured policy dataset / tiny "handbook" is enough grounding — response quality matters more than document-ingestion sophistication.
 
 ## Tech stack & commands
 
-Not yet chosen — the workspace currently contains only the brief and an empty `analysis/` folder. When we scaffold the app, record the run / build / test / lint / deploy (hosting) commands here so future sessions can build, run a single test, and ship the hosted URL. Bias toward a stack that deploys to a public URL trivially (the deliverable is a *hosted* prototype).
+Decided in [analysis/08-architecture-and-stack-review.md](analysis/08-architecture-and-stack-review.md):
+
+- **Framework:** Next.js (App Router, TypeScript) — one codebase for the mobile-first UI + server LLM logic.
+- **Hosting:** Railway (always-on Node container) — persistent volume + long-lived SSE, git-push deploy. (Vercel was rejected: its serverless model fights our two stateful needs — durable SQLite + a live relay.)
+- **Persistence:** SQLite via `better-sqlite3`, one file on the Railway volume. Migration target: Postgres/pgvector.
+- **Styling:** Tailwind CSS + shadcn/ui.
+- **LLM:** a hand-rolled provider-agnostic `FrontDeskModel` seam over the official SDKs — `@anthropic-ai/sdk` (Claude **Sonnet 5** answerer, **Haiku 4.5** judge) is the default; `@google/genai` (**Gemini 3.5 Flash**) is the A/B toggle. Structured outputs + prompt caching. No embeddings in v1 (structured grounding only).
+- **Real-time:** SSE — the live staff-relay stream.
+
+Commands (scripts land as the app is built; canonical list in [analysis/06-build-sequence.md](analysis/06-build-sequence.md) §6):
+
+```
+npm run dev        # local dev server
+npm run build      # production build
+npm run start      # run built app
+npm run lint       # lint
+npm run test       # unit tests (grounding wrapper, escalation gate, fact-checker)
+npm run eval       # golden regression suite (groundedness, decision, escalation P/R, facts)
+npm run db:migrate # apply SQLite schema
+npm run db:seed    # seed Little Acorns policies + historical interactions
+# deploy: git push  (Railway auto-builds)
+```
+
+Env: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` (Gemini toggle), `DATABASE_PATH` (SQLite file / Railway volume), `ADMIN_PASSCODE` (operator gate).
+
+### Architecture in one line
+Parent question → cached grounded call (all published policies in the prompt prefix) → deterministic `decide()` wrapper (citation validity + deterministic fact-check + groundedness gate) → **answer** (grounded, cited) *or* **live staff relay** (one voice, in-thread). Staff answers relay live and can be captured as a new policy — deflection compounds.
+
+### Non-negotiables when building
+- **Never show an answer that fails the guardrail wrapper — relay to staff instead** ([04 §3](analysis/04-grounding-and-prompts.md), [07](analysis/07-hallucination-guardrails-review.md)).
+- **Canonical definitions** (sensitive taxonomy, `HARD_SENSITIVE`, `SENSITIVE_INTENTS`, `decision_reason`) live in [analysis/09 §4](analysis/09-plan-review-and-consistency.md) — use them, don't redefine.
+- Mobile-first; warm, not IVR. Fictional data only (Little Acorns Early Learning Center).
 
 ## Claude API usage
 
-The grounded-answer + escalation logic is LLM-driven. Before writing or changing any model-integration code, consult the `claude-api` skill for current model IDs, tool-use, and grounding/caching patterns — default to the latest capable Claude model.
+The grounded-answer + escalation logic is LLM-driven. Before writing or changing any model-integration code, consult the `claude-api` skill for current model IDs, tool-use, and grounding/caching patterns. We deliberately use **Claude Sonnet 5** for the parent-facing answerer and **Haiku 4.5** for the async judge (latency/cost fit for a grounded FAQ chat — rationale in [analysis/04 §9](analysis/04-grounding-and-prompts.md)); Opus 5 stays reachable via the provider seam for hard cases.
