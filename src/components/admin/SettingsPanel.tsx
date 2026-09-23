@@ -5,11 +5,14 @@ import { adminFetch } from "./adminFetch";
 import { inputCls } from "./ui";
 
 type CautionLevel = "cautious" | "balanced" | "lean";
+type AuditMode = "off" | "flagged" | "all";
 type Settings = {
   caution_level: CautionLevel;
   availability: "online" | "away";
   operator_name: string;
   away_message: string;
+  developer_mode: boolean;
+  audit_mode: AuditMode;
 };
 
 const CAUTIONS: { value: CautionLevel; label: string; hint: string }[] = [
@@ -18,20 +21,38 @@ const CAUTIONS: { value: CautionLevel; label: string; hint: string }[] = [
   { value: "lean", label: "Lean", hint: "answer more — fewer handoffs" },
 ];
 
+const AUDIT_MODES: { value: AuditMode; label: string; hint: string }[] = [
+  { value: "off", label: "Off", hint: "collect nothing" },
+  { value: "flagged", label: "Flagged only (recommended)", hint: "keep detail only for poorly-rated sessions" },
+  { value: "all", label: "All sessions", hint: "keep detail for every session" },
+];
+
 /** The owner's safety dial (analysis/03 §4.4). HARD_SENSITIVE is floor-locked. */
-export default function SettingsPanel({ passcode }: { passcode: string }) {
+export default function SettingsPanel({
+  passcode,
+  onDeveloperMode,
+}: {
+  passcode: string;
+  /** Notify the shell so the (developer-only) Audit tab shows/hides live. */
+  onDeveloperMode?: (v: boolean) => void;
+}) {
   const [settings, setSettings] = useState<Settings>();
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     adminFetch("/api/admin/settings", passcode)
       .then((r) => r.json())
-      .then((d) => d.ok && setSettings(d.settings));
-  }, [passcode]);
+      .then((d) => {
+        if (!d.ok) return;
+        setSettings(d.settings);
+        onDeveloperMode?.(!!d.settings.developer_mode);
+      });
+  }, [passcode, onDeveloperMode]);
 
   async function patch(body: Partial<Settings>) {
     setSettings((s) => (s ? { ...s, ...body } : s));
     setSaved(false);
+    if (body.developer_mode !== undefined) onDeveloperMode?.(body.developer_mode);
     const res = await adminFetch("/api/admin/settings", passcode, {
       method: "PUT",
       body: JSON.stringify(body),
@@ -110,9 +131,69 @@ export default function SettingsPanel({ passcode }: { passcode: string }) {
       </section>
 
       <ProviderConfig passcode={passcode} />
+
+      {/* Developer tools — visually set apart, at the bottom (analysis/05 §5). */}
+      <section className="rounded-xl border border-dashed border-border bg-you/40 p-4 md:p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <span className="rounded bg-you px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted">
+            Dev
+          </span>
+          <h2 className="text-sm font-semibold">Developer mode</h2>
+        </div>
+        <label className="flex cursor-pointer items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={settings.developer_mode}
+            onChange={(e) => patch({ developer_mode: e.target.checked })}
+          />
+          <span>
+            <span className="font-medium">Enable developer mode</span>
+            <span className="mt-0.5 block text-xs text-muted">
+              Reveals the <b>Audit</b> tab for inspecting what we send the model and
+              what it returns. While off, nothing is collected. Turning it off keeps
+              your audit-retention choice for next time.
+            </span>
+          </span>
+        </label>
+
+        {settings.developer_mode && (
+          <div className="mt-4 border-t border-border pt-4">
+            <h3 className="mb-1 text-sm font-semibold">Audit detail retention</h3>
+            <p className="mb-3 text-xs text-muted">
+              How much per-turn troubleshooting detail we keep — the exact prompt we
+              send the model and its raw response. Kept for auditing quality; less is
+              more private and saves space.
+            </p>
+            <div className="flex flex-col gap-2">
+              {AUDIT_MODES.map((a) => (
+                <label
+                  key={a.value}
+                  className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm ${
+                    settings.audit_mode === a.value ? "border-brand bg-brand/5" : "border-border"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="audit-mode"
+                    checked={settings.audit_mode === a.value}
+                    onChange={() => patch({ audit_mode: a.value })}
+                  />
+                  <span className="font-medium">{a.label}</span>
+                  <span className="text-xs text-muted">— {a.hint}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-muted">
+              Clear the stored history any time from the <b>Audit</b> tab.
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
+
 
 // ── AI provider configuration (analysis/11 §3.5) ────────────────────────────
 type ModelOption = { id: string; label: string };

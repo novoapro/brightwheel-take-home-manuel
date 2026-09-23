@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
 import { createConversation } from "./conversations";
+import { insertAudit } from "./audit";
+import { createEscalation } from "./escalations";
 import {
   SESSION_TIMEOUT_MS,
   closeSession,
@@ -10,6 +12,9 @@ import {
   getParentSession,
   isSessionStale,
   listOpenSessions,
+  listRatedSessions,
+  listSessionsForConsole,
+  setSessionRating,
   sweepStaleSessions,
   touchSession,
 } from "./sessions";
@@ -70,6 +75,58 @@ describe("parent sessions (analysis/11 §6)", () => {
     // touch is a no-op on a closed session
     touchSession(db, s.id);
     expect(getParentSession(db, s.id)!.status).toBe("closed");
+  });
+
+  it("records a session-level rating + review, even after the session closed", () => {
+    const s = open("a@b.com");
+    closeSession(db, s.id, "parent");
+    const updated = setSessionRating(db, s.id, { rating: "down", review: "  too slow  " });
+    expect(updated?.rating).toBe("down");
+    expect(updated?.review).toBe("too slow"); // trimmed
+    expect(updated?.rated_at).toBeTruthy();
+    expect(setSessionRating(db, "nope", { rating: "up" })).toBeNull();
+  });
+
+  it("listRatedSessions returns only rated sessions", () => {
+    const a = open("a@b.com");
+    const b = open("b@b.com");
+    open("c@b.com"); // unrated — excluded
+    setSessionRating(db, a.id, { rating: "up" });
+    setSessionRating(db, b.id, { rating: "down", review: "meh" });
+    const rated = listRatedSessions(db);
+    expect(rated).toHaveLength(2);
+    expect(rated.map((r) => r.rating).sort()).toEqual(["down", "up"]);
+  });
+
+  it("listSessionsForConsole lists all sessions (active first) with relay counts", () => {
+    const active = open("active@b.com");
+    const closed = open("closed@b.com");
+    // Give the closed one a waiting escalation (a pending live relay).
+    insertAudit(db, {
+      id: "i1",
+      session_id: closed.id,
+      conversation_id: closed.conversation_id!,
+      parent_question: "?",
+      detected_intent: "out_of_scope",
+      decision: "escalated",
+      decision_reason: "out_of_scope",
+    });
+    createEscalation(db, {
+      id: "e1",
+      interaction_id: "i1",
+      question: "?",
+      detected_intent: "out_of_scope",
+      reason: "out_of_scope",
+    });
+    closeSession(db, closed.id, "parent");
+
+    const rows = listSessionsForConsole(db);
+    expect(rows.map((r) => r.id)).toEqual([active.id, closed.id]); // active first
+    const c = rows.find((r) => r.id === closed.id)!;
+    expect(c.status).toBe("closed");
+    expect(c.waitingRelays).toBe(1);
+    expect(c.interactions).toBe(1);
+    expect(rows.find((r) => r.id === active.id)!.waitingRelays).toBe(0);
   });
 
   it("sweep + listOpenSessions drop timed-out sessions", () => {

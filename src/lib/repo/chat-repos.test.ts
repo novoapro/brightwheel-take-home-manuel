@@ -123,6 +123,31 @@ describe("escalations repo", () => {
     expect(listWaitingEscalations(db)[0].interaction_id).toBe(auditId);
   });
 
+  it("excludes a detached (orphaned) escalation from the live queue", () => {
+    const c = convo();
+    const auditId = randomUUID();
+    insertAudit(db, {
+      id: auditId,
+      session_id: "s1",
+      conversation_id: c,
+      parent_question: "q",
+      detected_intent: "out_of_scope",
+      decision: "escalated",
+      decision_reason: "out_of_scope",
+    });
+    const esc = createEscalation(db, {
+      id: randomUUID(),
+      interaction_id: auditId,
+      question: "q",
+      detected_intent: "out_of_scope",
+      reason: "out_of_scope",
+    });
+    expect(listWaitingEscalations(db)).toHaveLength(1);
+    // Detach it (as session removal does) → it can no longer be relayed.
+    db.prepare(`UPDATE escalations SET interaction_id = NULL WHERE id = ?`).run(esc.id);
+    expect(listWaitingEscalations(db)).toHaveLength(0);
+  });
+
   it("enforces the interaction foreign key", () => {
     expect(() =>
       createEscalation(db, {

@@ -5,6 +5,7 @@ import Dashboard from "@/components/admin/Dashboard";
 import KnowledgeBaseEditor from "@/components/admin/KnowledgeBaseEditor";
 import RelayQueue from "@/components/admin/RelayQueue";
 import SessionsPanel from "@/components/admin/SessionsPanel";
+import AuditPanel from "@/components/admin/AuditPanel";
 import SettingsPanel from "@/components/admin/SettingsPanel";
 import BrandingPanel from "@/components/admin/BrandingPanel";
 import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
@@ -18,15 +19,17 @@ import { adminFetch } from "@/components/admin/adminFetch";
  * §5.1), and Settings. A vertical rail scales as sections grow (unlike a
  * horizontal tab row) and reads as a panel inside Brightwheel.
  */
-type Tab = "dashboard" | "relay" | "sessions" | "knowledge" | "branding" | "settings";
+type Tab = "dashboard" | "relay" | "sessions" | "audit" | "knowledge" | "branding" | "settings";
 
-const NAV: { id: Tab; label: string }[] = [
+const NAV: { id: Tab; label: string; dev?: boolean }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "relay", label: "Live relay" },
   { id: "sessions", label: "Sessions" },
   { id: "knowledge", label: "Knowledge Base" },
   { id: "branding", label: "Branding" },
   { id: "settings", label: "Settings" },
+  // Developer-only, shown at the bottom with a distinct treatment (analysis/05).
+  { id: "audit", label: "Audit", dev: true },
 ];
 
 // Monochrome line icons (Feather-style) that inherit the nav text color via
@@ -46,6 +49,12 @@ const ICON_PATHS: Record<Tab, React.ReactNode> = {
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  audit: (
+    <>
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </>
   ),
   knowledge: (
@@ -101,6 +110,7 @@ export default function AdminPage() {
   const [operatorName, setOperatorName] = useState("");
   const [availability, setAvailability] = useState<"online" | "away">("online");
   const [offlineAt, setOfflineAt] = useState<string | null>(null);
+  const [developerMode, setDeveloperMode] = useState(false);
   const [error, setError] = useState<string>();
   const [tab, setTab] = useState<Tab>("dashboard");
   // Waiting-relay count over SSE, shell-wide so the "Live relay" nav item badges
@@ -154,6 +164,7 @@ export default function AdminPage() {
         setOperatorName(d.settings.operator_name ?? "");
         setAvailability(d.settings.availability ?? "online");
         setOfflineAt(d.settings.offline_at ?? null);
+        setDeveloperMode(!!d.settings.developer_mode);
       })
       .catch(() => {});
   }, [authCode]);
@@ -231,7 +242,10 @@ export default function AdminPage() {
     );
   }
 
-  const current = NAV.find((n) => n.id === tab)!;
+  // If developer mode is off, the Audit tab is hidden — fall back to Settings so
+  // the operator is never stranded on a blank section (derived, no effect).
+  const activeTab: Tab = tab === "audit" && !developerMode ? "settings" : tab;
+  const current = NAV.find((n) => n.id === activeTab)!;
 
   return (
     <div className="flex min-h-dvh w-full">
@@ -289,18 +303,18 @@ export default function AdminPage() {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-2 py-2">
-          {NAV.map((n) => (
+          {NAV.filter((n) => !n.dev || developerMode).map((n) => (
             <button
               key={n.id}
               onClick={() => {
                 setTab(n.id);
                 if (isMobile()) closeNav(); // dismiss the drawer after picking
               }}
-              title={n.label}
+              title={n.dev ? `${n.label} (developer)` : n.label}
               className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${
                 collapsed ? "justify-center px-0" : "px-3"
-              } ${
-                tab === n.id
+              } ${n.dev ? "mt-1 border-t border-border pt-3" : ""} ${
+                activeTab === n.id
                   ? "bg-brand/10 font-medium text-brand-strong"
                   : "text-muted hover:bg-you"
               }`}
@@ -322,6 +336,11 @@ export default function AdminPage() {
                       )}
                     </span>
                     {!collapsed && <span className="truncate">{n.label}</span>}
+                    {!collapsed && n.dev && (
+                      <span className="ml-auto rounded bg-you px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted">
+                        Dev
+                      </span>
+                    )}
                     {/* Expanded rail: a count pill at the row's end. */}
                     {!collapsed && badge > 0 && (
                       <span
@@ -372,7 +391,7 @@ export default function AdminPage() {
 
         <div className="flex-1 px-4 py-5 md:px-6 lg:px-8 lg:py-7">
           <div className="mx-auto w-full max-w-3xl">
-            {tab === "dashboard" && (
+            {activeTab === "dashboard" && (
               <Dashboard
                 passcode={authCode}
                 liveWaiting={waitingCount}
@@ -380,11 +399,14 @@ export default function AdminPage() {
                 onOpenRelay={() => setTab("relay")}
               />
             )}
-            {tab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
-            {tab === "sessions" && <SessionsPanel passcode={authCode} />}
-            {tab === "knowledge" && <KnowledgeBaseEditor passcode={authCode} operatorName={operatorName} />}
-            {tab === "branding" && <BrandingPanel passcode={authCode} />}
-            {tab === "settings" && <SettingsPanel passcode={authCode} />}
+            {activeTab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
+            {activeTab === "sessions" && <SessionsPanel passcode={authCode} />}
+            {activeTab === "audit" && <AuditPanel passcode={authCode} />}
+            {activeTab === "knowledge" && <KnowledgeBaseEditor passcode={authCode} operatorName={operatorName} />}
+            {activeTab === "branding" && <BrandingPanel passcode={authCode} />}
+            {activeTab === "settings" && (
+              <SettingsPanel passcode={authCode} onDeveloperMode={setDeveloperMode} />
+            )}
           </div>
         </div>
 

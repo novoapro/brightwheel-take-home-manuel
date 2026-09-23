@@ -1,8 +1,10 @@
 import type { Database } from "better-sqlite3";
 import { getModel } from "./model";
+import type { DetectedIntent } from "./types";
 import type { FrontDeskModel } from "./model/types";
 import { setJudgeScores } from "./repo/audit";
 import { getEntry } from "./repo/knowledge";
+import { foldGroundedness } from "./repo/metrics_rollup";
 import { getSettings } from "./repo/settings";
 
 /**
@@ -35,5 +37,23 @@ export async function judgeInteraction(
     citedPolicies,
   });
   setJudgeScores(db, input.interactionId, scores);
+
+  // Fold the score into the metrics rollup (so groundedness survives even after
+  // the raw audit row is pruned). Read the turn's bucket from the audit row,
+  // which still exists at judge time (the judge runs well before session close).
+  const bucket = db
+    .prepare(
+      `SELECT timestamp, detected_intent, provider FROM interaction_audit WHERE id = ?`,
+    )
+    .get(input.interactionId) as
+    | { timestamp: string; detected_intent: DetectedIntent | null; provider: string | null }
+    | undefined;
+  if (bucket) {
+    foldGroundedness(
+      db,
+      { timestamp: bucket.timestamp, intent: bucket.detected_intent, provider: bucket.provider },
+      scores.groundedness,
+    );
+  }
   return scores;
 }

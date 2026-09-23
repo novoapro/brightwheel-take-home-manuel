@@ -4,6 +4,8 @@ import { createMemoryDb } from "./db";
 import { seedDatabase } from "./seed";
 import { handleTurn } from "./conversation";
 import { getAudit, setParentFeedback } from "./repo/audit";
+import { getDebugEnvelope } from "./repo/debug";
+import { updateSettings } from "./repo/settings";
 import { listWaitingEscalations } from "./repo/escalations";
 import { listMessages } from "./repo/messages";
 import type {
@@ -139,6 +141,39 @@ describe("handleTurn — multi-turn", () => {
     expect(model2.lastHistory.length).toBe(3); // 2 prior + the new question
     expect(model2.lastHistory.at(-1)?.content).toBe("And on weekends?");
     expect(model2.lastHistory[0].role).toBe("user");
+  });
+});
+
+describe("handleTurn — audit envelope capture (analysis/05 §2)", () => {
+  it("captures the prompt + raw model proposal when audit is on", async () => {
+    updateSettings(db, { developer_mode: true, audit_mode: "flagged" });
+    const r = await handleTurn(db, {
+      question: "What if I'm late?",
+      model: new FakeModel(answered()),
+    });
+    const env = getDebugEnvelope(db, r.interactionId)!;
+    expect(env).not.toBeNull();
+    expect((env.system_prompt ?? "").length).toBeGreaterThan(0); // the cached prefix we sent
+    expect(env.messages.at(-1)?.content).toBe("What if I'm late?");
+    expect(env.raw_proposal).toMatchObject({ citations: ["hours.late_pickup"] });
+  });
+
+  it("collects nothing when audit_mode is off", async () => {
+    updateSettings(db, { developer_mode: true, audit_mode: "off" });
+    const r = await handleTurn(db, {
+      question: "What if I'm late?",
+      model: new FakeModel(answered()),
+    });
+    expect(getDebugEnvelope(db, r.interactionId)).toBeNull();
+  });
+
+  it("collects nothing when developer mode is off (even if audit_mode = all)", async () => {
+    updateSettings(db, { developer_mode: false, audit_mode: "all" });
+    const r = await handleTurn(db, {
+      question: "What if I'm late?",
+      model: new FakeModel(answered()),
+    });
+    expect(getDebugEnvelope(db, r.interactionId)).toBeNull();
   });
 });
 

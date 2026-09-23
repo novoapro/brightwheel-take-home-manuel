@@ -19,7 +19,7 @@ import type { Database } from "better-sqlite3";
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 11;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -74,6 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_intent_status ON knowledge_entries (int
 -- parent_sessions: a persisted parent identity + thread (analysis/11 §6).
 -- Keyed by email so a returning parent resumes their open session; closed
 -- manually by the agent or after 30 min of inactivity.
+-- The session-level rating (👍/👎 + optional review) is captured at close from a
+-- popup (analysis/05 Tier 4 CSAT, moved off individual messages onto the session).
 CREATE TABLE IF NOT EXISTS parent_sessions (
   id              TEXT PRIMARY KEY,
   name            TEXT NOT NULL,
@@ -83,7 +85,10 @@ CREATE TABLE IF NOT EXISTS parent_sessions (
   created_at      TEXT NOT NULL,
   last_active_at  TEXT NOT NULL,
   closed_at       TEXT,
-  closed_reason   TEXT CHECK (closed_reason IN ('agent','inactivity','parent'))
+  closed_reason   TEXT CHECK (closed_reason IN ('agent','inactivity','parent')),
+  rating          TEXT CHECK (rating IN ('up','down')),   -- session-level CSAT
+  review          TEXT,                                    -- optional free-text
+  rated_at        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_parent_sessions_email ON parent_sessions (email, status);
 
@@ -120,6 +125,42 @@ CREATE TABLE IF NOT EXISTS interaction_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON interaction_audit (timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_decision ON interaction_audit (decision);
+
+-- interaction_debug: the heavy "what we sent / what we expected" troubleshooting
+-- envelope per turn (analysis/05 §2), isolated from the hot audit table so a
+-- retention prune is a cheap row delete. Captured on every turn unless audit is
+-- Off; kept or pruned at session close per the operator's audit_mode + rating.
+CREATE TABLE IF NOT EXISTS interaction_debug (
+  interaction_id TEXT PRIMARY KEY REFERENCES interaction_audit(id),
+  system_prompt  TEXT,        -- the cached system prefix we sent the model
+  messages       TEXT,        -- JSON: history + the parent question we sent
+  raw_proposal   TEXT,        -- JSON: the model's GroundedResult, pre-guardrails
+  created_at     TEXT NOT NULL
+);
+
+-- metrics_daily: the durable Dashboard rollup (analysis/05). Incremented as each
+-- turn/judge/rating arrives so the Dashboard never scans raw rows — which lets us
+-- delete raw detail when audit isn't collecting, keeping the DB lean. Bounded:
+-- one row per (day, intent, provider).
+CREATE TABLE IF NOT EXISTS metrics_daily (
+  day                  TEXT NOT NULL,   -- YYYY-MM-DD (UTC)
+  intent               TEXT NOT NULL,
+  provider             TEXT NOT NULL,
+  answered             INTEGER NOT NULL DEFAULT 0,
+  escalated            INTEGER NOT NULL DEFAULT 0,
+  out_of_scope         INTEGER NOT NULL DEFAULT 0,
+  answered_with_source INTEGER NOT NULL DEFAULT 0,
+  groundedness_sum     REAL NOT NULL DEFAULT 0,   -- Σ judge groundedness
+  groundedness_n       INTEGER NOT NULL DEFAULT 0, -- # scored (for the average)
+  PRIMARY KEY (day, intent, provider)
+);
+
+-- metrics_csat_daily: session-level 👍/👎 rollup by day (analysis/05 Tier 4).
+CREATE TABLE IF NOT EXISTS metrics_csat_daily (
+  day  TEXT PRIMARY KEY,
+  up   INTEGER NOT NULL DEFAULT 0,
+  down INTEGER NOT NULL DEFAULT 0
+);
 
 -- escalations: an unknown/sensitive question relayed to staff (Escalation)
 CREATE TABLE IF NOT EXISTS escalations (
@@ -165,7 +206,16 @@ CREATE TABLE IF NOT EXISTS settings (
   availability    TEXT NOT NULL DEFAULT 'online' CHECK (availability IN ('online','away')),
   operator_name   TEXT NOT NULL DEFAULT '',
   away_message    TEXT NOT NULL DEFAULT '',
-  offline_at      TEXT                              -- ISO auto-offline time, or NULL (never)
+  offline_at      TEXT,                             -- ISO auto-offline time, or NULL (never)
+  -- developer_mode: gates the whole audit feature (the Audit tab + collection).
+  -- Off by default; when off, the effective audit mode is always 'off'.
+  developer_mode  INTEGER NOT NULL DEFAULT 0,
+  -- audit_mode: how much troubleshooting detail we retain (analysis/05 §2), only
+  -- in effect while developer_mode is on.
+  --   off     = collect nothing; flagged = keep only sessions that didn't get a
+  --   👍 (👎 or unrated); all = keep every session's envelope.
+  -- Off by default so enabling developer mode collects nothing until chosen.
+  audit_mode      TEXT NOT NULL DEFAULT 'off' CHECK (audit_mode IN ('off','flagged','all'))
 );
 
 -- provider_credentials: per-provider API key (encrypted) + model choice (analysis/11 §3.6).
@@ -272,6 +322,33 @@ function migrateLegacyPolicies(db: Database): void {
 }
 
 /**
+ * Add columns introduced after a table's first release. `CREATE TABLE IF NOT
+ * EXISTS` never alters an existing table, so a DB created before schema v10 is
+ * missing the audit/rating columns — add them idempotently here (the disposable-
+ * DB stance still holds; this just spares a manual re-seed). SQLite allows CHECK
+ * and a NOT NULL+DEFAULT on ADD COLUMN; NULL passes a CHECK, so nullable columns
+ * added to existing rows are fine.
+ */
+function migrateAddedColumns(db: Database): void {
+  const add = (table: string, column: string, def: string) => {
+    if (!columnExists(db, table, column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+    }
+  };
+  // settings — developer mode gate + audit retention (analysis/05 §2).
+  add("settings", "developer_mode", "developer_mode INTEGER NOT NULL DEFAULT 0");
+  add(
+    "settings",
+    "audit_mode",
+    "audit_mode TEXT NOT NULL DEFAULT 'off' CHECK (audit_mode IN ('off','flagged','all'))",
+  );
+  // parent_sessions — session-level rating (analysis/05 Tier 4).
+  add("parent_sessions", "rating", "rating TEXT CHECK (rating IN ('up','down'))");
+  add("parent_sessions", "review", "review TEXT");
+  add("parent_sessions", "rated_at", "rated_at TEXT");
+}
+
+/**
  * Apply the schema to a database connection. Idempotent — creates any missing
  * tables/indexes and records the schema version. Accepts any Database instance
  * so tests can migrate an in-memory DB.
@@ -279,6 +356,7 @@ function migrateLegacyPolicies(db: Database): void {
 export function migrate(db: Database): void {
   db.exec(DDL);
   migrateLegacyPolicies(db);
+  migrateAddedColumns(db);
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('app', 'ai-front-desk')
        ON CONFLICT(key) DO NOTHING`,

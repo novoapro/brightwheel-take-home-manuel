@@ -1,5 +1,10 @@
 import type { Database } from "better-sqlite3";
 import { upsertEntry } from "../repo/knowledge";
+import { createConversation } from "../repo/conversations";
+import { appendMessage } from "../repo/messages";
+import { insertDebugEnvelope } from "../repo/debug";
+import { recomputeMetrics } from "../repo/metrics_rollup";
+import { updateSettings } from "../repo/settings";
 
 /**
  * Seed a realistic week of history (analysis/05 §6 decision) so the operator
@@ -45,6 +50,55 @@ const CASES = [
   { q: "I want to dispute a late fee on my bill.", intent: "tuition", count: 1 },
 ] as const;
 
+/**
+ * A few fully-realized demo sessions for the Audit surface (analysis/05 §5) —
+ * real threads with a session rating + (for the non-👍 ones) a retained "what we
+ * sent / what we expected" envelope. Built by *promoting existing* history rows
+ * into sessions (re-pointing their session_id/conversation_id), so the metric
+ * totals stay unchanged. Envelopes are seeded only for sessions that did not get
+ * a 👍 — exactly what `flagged` retention would leave behind.
+ */
+const DEMO_SESSIONS = [
+  {
+    sid: "hist-sess-1",
+    conv: "hist-conv-1",
+    name: "Jordan Rivera",
+    email: "jordan.rivera@example.com",
+    closed_reason: "parent",
+    rating: "up" as const,
+    review: null as string | null,
+    turns: [
+      { auditId: "hist-a-0", intent: "hours", q: "When do you open?", a: "We're open Monday–Friday, 7:00 AM to 6:00 PM.", answered: true, citations: ["hours.regular"] },
+      { auditId: "hist-a-1", intent: "hours", q: "Are you open on Veterans Day?", a: "We're closed on Veterans Day (November 11).", answered: true, citations: ["hours.holidays.2026"] },
+    ],
+  },
+  {
+    sid: "hist-sess-2",
+    conv: "hist-conv-2",
+    name: "Priya Shah",
+    email: "priya.shah@example.com",
+    closed_reason: "parent",
+    rating: "down" as const,
+    review: "I still wasn't sure whether my son could come in — it took a while.",
+    turns: [
+      { auditId: "hist-a-5", intent: "health", q: "What is your fever policy?", a: "Children must be fever-free (under 100.4°F) for 24 hours, without medication, before returning.", answered: true, citations: ["health.illness_exclusion"] },
+      { auditId: "hist-case-0-a", intent: "health", q: "My son had a fever last night, can he come in?", a: "Let me check with our team on your specific case.", answered: false, citations: ["health.illness_exclusion"] },
+    ],
+  },
+  {
+    sid: "hist-sess-3",
+    conv: "hist-conv-3",
+    name: "Marcus Lee",
+    email: "marcus.lee@example.com",
+    closed_reason: "inactivity",
+    rating: null as "up" | "down" | null,
+    review: null as string | null,
+    turns: [
+      { auditId: "hist-a-3", intent: "tuition", q: "How much is tuition?", a: "Infant care is $1,650/month; each age group has its own rate — see the tuition schedule.", answered: true, citations: ["tuition.rates"] },
+    ],
+  },
+] as const;
+
 export function seedHistory(db: Database): SeedResultHistory {
   const base = Date.now();
   const ts = (daysAgo: number, seq: number) =>
@@ -62,6 +116,17 @@ export function seedHistory(db: Database): SeedResultHistory {
         'claude-sonnet-5', @response_text, @cited_sources, NULL, @latency,
         @parent_feedback, @judge_scores)`,
   );
+  const insertSession = db.prepare(
+    `INSERT INTO parent_sessions
+       (id, name, email, status, conversation_id, created_at, last_active_at,
+        closed_at, closed_reason, rating, review, rated_at)
+     VALUES
+       (@id, @name, @email, 'closed', @conversation_id, @created_at, @last_active_at,
+        @closed_at, @closed_reason, @rating, @review, @rated_at)`,
+  );
+  const repointAudit = db.prepare(
+    `UPDATE interaction_audit SET session_id = @sid, conversation_id = @conv WHERE id = @auditId`,
+  );
   const insertEsc = db.prepare(
     `INSERT INTO escalations
        (id, interaction_id, question, detected_intent, reason, status,
@@ -72,10 +137,20 @@ export function seedHistory(db: Database): SeedResultHistory {
   );
 
   const run = db.transaction(() => {
-    // Clear prior history so re-seeding doesn't duplicate.
+    // Clear prior history so re-seeding doesn't duplicate. FK-safe order:
+    // children (messages, debug, escalations) before the audit rows they
+    // reference, then the conversations/sessions those hang off.
+    db.prepare(`DELETE FROM messages WHERE id LIKE 'hist-%'`).run();
+    db.prepare(`DELETE FROM interaction_debug WHERE interaction_id LIKE 'hist-%'`).run();
     db.prepare(`DELETE FROM escalations WHERE id LIKE 'hist-%'`).run();
     db.prepare(`DELETE FROM interaction_audit WHERE id LIKE 'hist-%'`).run();
+    db.prepare(`DELETE FROM parent_sessions WHERE id LIKE 'hist-%'`).run();
+    db.prepare(`DELETE FROM conversations WHERE id LIKE 'hist-%'`).run();
     db.prepare(`DELETE FROM knowledge_entries WHERE id LIKE 'captured.seed.%'`).run();
+
+    // Demo fixture: turn on developer mode + `flagged` retention so the Audit tab
+    // is populated and coherent out of the box (the product defaults are off).
+    updateSettings(db, { developer_mode: true, audit_mode: "flagged" });
 
     let audits = 0;
     let escalations = 0;
@@ -230,6 +305,66 @@ export function seedHistory(db: Database): SeedResultHistory {
         c++;
       }
     }
+
+    // Promote a few history rows into fully-realized, rated demo sessions so the
+    // Audit surface renders live (analysis/05 §5). No new audit rows → totals hold.
+    for (let i = 0; i < DEMO_SESSIONS.length; i++) {
+      const s = DEMO_SESSIONS[i];
+      const when = ts(0, DEMO_SESSIONS.length - i); // recent, distinct per session
+      createConversation(db, { id: s.conv, session_id: s.sid, active_provider: "anthropic" });
+      insertSession.run({
+        id: s.sid,
+        name: s.name,
+        email: s.email,
+        conversation_id: s.conv,
+        created_at: when,
+        last_active_at: when,
+        closed_at: when,
+        closed_reason: s.closed_reason,
+        rating: s.rating,
+        review: s.review,
+        rated_at: s.rating ? when : null,
+      });
+      for (const turn of s.turns) {
+        repointAudit.run({ sid: s.sid, conv: s.conv, auditId: turn.auditId });
+        appendMessage(db, {
+          id: `hist-msg-${turn.auditId}-q`,
+          conversation_id: s.conv,
+          role: "parent",
+          text: turn.q,
+        });
+        appendMessage(db, {
+          id: `hist-msg-${turn.auditId}-a`,
+          conversation_id: s.conv,
+          role: "frontdesk",
+          provenance: turn.answered ? "grounded" : null,
+          text: turn.a,
+          citations: turn.answered ? [...turn.citations] : [],
+        });
+        // `flagged` retention keeps detail only for sessions without a 👍.
+        if (s.rating !== "up") {
+          insertDebugEnvelope(db, {
+            interaction_id: turn.auditId,
+            system_prompt:
+              "[seeded] Little Acorns Front Desk system prefix — persona, center facts, and all published policies (prompt-cached).",
+            messages: [{ role: "user", content: turn.q }],
+            raw_proposal: {
+              intent: turn.intent,
+              is_case_specific: !turn.answered,
+              sensitive_category: turn.answered ? null : "health",
+              grounding_confidence: turn.answered ? 0.95 : 0.4,
+              citations: [...turn.citations],
+              answer_intent: turn.answered ? "answer" : "escalate",
+              parent_message: turn.a,
+            },
+          });
+        }
+      }
+    }
+
+    // Build the Dashboard rollup from everything just seeded (the live fold path
+    // isn't exercised during seeding).
+    recomputeMetrics(db);
 
     return { audits, escalations, capturedEntries: 1 };
   });

@@ -8,6 +8,7 @@ import {
   isSessionStale,
   touchSession,
 } from "@/lib/repo/sessions";
+import { applyRetention } from "@/lib/retention";
 
 // better-sqlite3 + the Anthropic SDK need the Node.js runtime (never Edge).
 export const runtime = "nodejs";
@@ -43,7 +44,10 @@ export async function POST(request: Request) {
     if (sessionId) {
       const s = getParentSession(db, sessionId);
       if (!s || s.status === "closed" || isSessionStale(s)) {
-        if (s && s.status === "open") closeSession(db, s.id, "inactivity");
+        if (s && s.status === "open") {
+          closeSession(db, s.id, "inactivity");
+          applyRetention(db, s.id); // clean raw detail when audit isn't collecting
+        }
         return NextResponse.json(
           { ok: false, sessionClosed: true, error: "Your session has ended." },
           { status: 409 },

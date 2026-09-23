@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
-import { getSettings, resolveAvailability, updateSettings } from "@/lib/repo/settings";
+import { effectiveAuditMode, getSettings, resolveAvailability, updateSettings } from "@/lib/repo/settings";
+import { purgeDebugEnvelopes } from "@/lib/repo/debug";
 import { getRelayBus } from "@/lib/relay/bus";
 import { AWAY_MESSAGE_MAX, OPERATOR_NAME_MAX } from "@/lib/types";
-import type { Availability, CautionLevel, Provider, Settings } from "@/lib/types";
+import type { AuditMode, Availability, CautionLevel, Provider, Settings } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 const CAUTIONS: CautionLevel[] = ["cautious", "balanced", "lean"];
 const PROVIDERS: Provider[] = ["anthropic", "openai", "google"];
 const AVAILABILITIES: Availability[] = ["online", "away"];
+const AUDIT_MODES: AuditMode[] = ["off", "flagged", "all"];
 
 /** Read operator settings — caution, provider, availability + operator (analysis/04 §2, 11 §4). */
 export function GET(request: Request) {
@@ -40,6 +42,12 @@ export async function PUT(request: Request) {
   if (typeof body.away_message === "string") {
     patch.away_message = body.away_message.trim().slice(0, AWAY_MESSAGE_MAX);
   }
+  if (typeof body.developer_mode === "boolean") {
+    patch.developer_mode = body.developer_mode;
+  }
+  if (AUDIT_MODES.includes(body.audit_mode as AuditMode)) {
+    patch.audit_mode = body.audit_mode as AuditMode;
+  }
   // offline_at: null = never; an ISO string = auto-flip to Away at that time.
   if (body.offline_at === null) {
     patch.offline_at = null;
@@ -52,7 +60,7 @@ export async function PUT(request: Request) {
       {
         ok: false,
         error:
-          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message).",
+          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message / developer_mode / audit_mode).",
       },
       { status: 400 },
     );
@@ -72,6 +80,16 @@ export async function PUT(request: Request) {
   }
 
   const updated = updateSettings(getDb(), patch);
+
+  // If audit just stopped collecting (developer mode off, or audit_mode = off),
+  // drop the stored troubleshooting envelopes — the metrics rollup keeps the
+  // numbers, and sessions/transcripts/relays are left untouched (analysis/05 §2).
+  if (
+    (patch.developer_mode !== undefined || patch.audit_mode !== undefined) &&
+    effectiveAuditMode(updated) === "off"
+  ) {
+    purgeDebugEnvelopes(getDb(), "all");
+  }
 
   // Push the new presence to every connected parent so the status pill updates
   // live (analysis/11 §4.2) — the same SSE model as staff replies.

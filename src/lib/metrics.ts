@@ -1,13 +1,10 @@
 import type { Database } from "better-sqlite3";
 import {
-  listAuditMetrics,
-  type AuditMetricRow,
-} from "./repo/audit";
-import {
   listAllEscalations,
   listWaitingEscalations,
 } from "./repo/escalations";
 import { countCapturedEntries } from "./repo/knowledge";
+import { readRollup, type DashboardRollup } from "./repo/metrics_rollup";
 import type { Escalation } from "./repo/escalations";
 
 /**
@@ -104,63 +101,40 @@ export interface ProviderSlice {
   groundedness: number | null;
 }
 
-function providerSlices(audits: AuditMetricRow[]): ProviderSlice[] {
-  const map = new Map<string, AuditMetricRow[]>();
-  for (const a of audits) {
-    const key = a.provider ?? "unknown";
-    let rows = map.get(key);
-    if (!rows) {
-      rows = [];
-      map.set(key, rows);
-    }
-    rows.push(a);
-  }
-  if (map.size < 2) return []; // no A/B to show with a single provider
-  return [...map.entries()]
-    .map(([provider, rows]) => {
-      const answered = rows.filter((r) => r.decision === "answered").length;
-      const scored = rows.filter((r) => r.groundedness != null);
-      return {
-        provider,
-        total: rows.length,
-        containmentRate: ratio(answered, rows.length),
-        groundedness:
-          scored.length === 0
-            ? null
-            : scored.reduce((s, r) => s + (r.groundedness ?? 0), 0) / scored.length,
-      };
-    })
-    .sort((a, b) => a.provider.localeCompare(b.provider));
-}
-
 const normalizeQuestion = (q: string) => q.trim().toLowerCase().replace(/\s+/g, " ");
 const ratio = (n: number, d: number) => (d === 0 ? 0 : n / d);
 
+/** A/B slices from the rollup — only shown when >1 provider has handled traffic. */
+function providerSlices(rollup: DashboardRollup): ProviderSlice[] {
+  const active = rollup.byProvider.filter((p) => p.total > 0);
+  if (active.length < 2) return [];
+  return active
+    .map((p) => ({
+      provider: p.provider,
+      total: p.total,
+      containmentRate: ratio(p.answered, p.total),
+      groundedness: p.groundednessN === 0 ? null : p.groundednessSum / p.groundednessN,
+    }))
+    .sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
 /**
- * Pure aggregation over audit rows + escalations. Separated from I/O so it's
- * exhaustively testable with synthetic inputs.
+ * Pure assembly of the Dashboard from the metrics rollup + escalations (top gaps,
+ * waiting) + captured count. Separated from I/O so it's exhaustively testable, and
+ * it never touches raw per-turn rows — those may have been pruned when audit is off.
  */
-export function aggregate(
-  audits: AuditMetricRow[],
+export function assemble(
+  rollup: DashboardRollup,
   escalations: Escalation[],
   capturedEntries: number,
   waiting: number,
   avgHandleMinutes = AVG_HANDLE_MINUTES,
 ): DashboardMetrics {
-  const total = audits.length;
-  const answered = audits.filter((a) => a.decision === "answered").length;
-  const escalated = total - answered;
-  const outOfScope = audits.filter(
-    (a) => a.decision_reason === "out_of_scope",
-  ).length;
-  const answeredWithSource = audits.filter(
-    (a) => a.decision === "answered" && a.cited_count > 0,
-  ).length;
-  const scored = audits.filter((a) => a.groundedness != null);
+  const answered = rollup.answered;
+  const escalated = rollup.escalated;
+  const total = answered + escalated;
   const groundedness =
-    scored.length === 0
-      ? null
-      : scored.reduce((sum, a) => sum + (a.groundedness ?? 0), 0) / scored.length;
+    rollup.groundednessN === 0 ? null : rollup.groundednessSum / rollup.groundednessN;
 
   // Top knowledge gaps: recurring questions the handbook doesn't cover. Exclude
   // case-specific/sensitive relays — those are never "add a policy" candidates.
@@ -182,16 +156,8 @@ export function aggregate(
     .sort((a, b) => b.count - a.count || a.question.localeCompare(b.question))
     .slice(0, 5);
 
-  const byIntentMap = new Map<string, { answered: number; escalated: number }>();
-  for (const a of audits) {
-    const intent = a.detected_intent ?? "out_of_scope";
-    const row = byIntentMap.get(intent) ?? { answered: 0, escalated: 0 };
-    if (a.decision === "answered") row.answered += 1;
-    else row.escalated += 1;
-    byIntentMap.set(intent, row);
-  }
-  const byIntent = [...byIntentMap.entries()]
-    .map(([intent, v]) => ({ intent, ...v }))
+  const byIntent = [...rollup.byIntent]
+    .map((r) => ({ intent: r.intent, answered: r.answered, escalated: r.escalated }))
     .sort((a, b) => a.intent.localeCompare(b.intent));
 
   return {
@@ -200,18 +166,18 @@ export function aggregate(
     escalated,
     containmentRate: ratio(answered, total),
     escalationRate: ratio(escalated, total),
-    coverageGapRate: ratio(outOfScope, total),
-    attributionRate: ratio(answeredWithSource, answered),
+    coverageGapRate: ratio(rollup.outOfScope, total),
+    attributionRate: ratio(rollup.answeredWithSource, answered),
     groundedness,
     hoursSaved: (answered * avgHandleMinutes) / 60,
     avgHandleMinutes,
-    thumbsUp: audits.filter((a) => a.parent_feedback === "up").length,
-    thumbsDown: audits.filter((a) => a.parent_feedback === "down").length,
+    thumbsUp: rollup.thumbsUp,
+    thumbsDown: rollup.thumbsDown,
     capturedEntries,
     waiting,
     topGaps,
     byIntent,
-    byProvider: providerSlices(audits),
+    byProvider: providerSlices(rollup),
   };
 }
 
@@ -221,11 +187,11 @@ export function computeDashboard(
   avgHandleMinutes = AVG_HANDLE_MINUTES,
 ): DashboardMetrics {
   const start = rangeStart(range);
-  // The period-scoped metrics filter to the selected window. `waiting` is the
+  // Metrics come from the durable rollup (not raw audit rows). `waiting` is the
   // deliberate exception — an open escalation is current state, not a historical
   // event, so it's always counted in full regardless of the range.
-  return aggregate(
-    withinRange(listAuditMetrics(db), (a) => a.timestamp, start),
+  return assemble(
+    readRollup(db, start),
     withinRange(listAllEscalations(db), (e) => e.created_at, start),
     countCapturedEntries(db),
     listWaitingEscalations(db).length,

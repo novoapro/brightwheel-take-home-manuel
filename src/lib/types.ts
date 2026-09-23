@@ -110,6 +110,14 @@ export type CautionLevel = "cautious" | "balanced" | "lean";
 export type Provider = "anthropic" | "openai" | "google";
 export type Availability = "online" | "away";
 
+/**
+ * How much per-turn troubleshooting detail the operator retains (analysis/05 §2).
+ *   off     — audit disabled: collect nothing.
+ *   flagged — capture always; at close keep only sessions that did NOT get a 👍.
+ *   all     — capture always; keep every session.
+ */
+export type AuditMode = "off" | "flagged" | "all";
+
 /** Longest operator name we store / render (analysis/11 §4.6). */
 export const OPERATOR_NAME_MAX = 60;
 
@@ -132,6 +140,14 @@ export interface Settings {
    * read (no scheduler). Null = stay Online until manually closed (analysis/11 §4.1).
    */
   offline_at: string | null;
+  /**
+   * Gates the whole audit feature (the Audit tab + all collection). Off by
+   * default; while off the effective audit mode is always "off". Toggling it does
+   * not change the stored `audit_mode` (analysis/05 §2).
+   */
+  developer_mode: boolean;
+  /** How much per-turn troubleshooting detail we retain for audit (analysis/05 §2). */
+  audit_mode: AuditMode;
 }
 
 /** How a staff answer reaches the parent (analysis/11 §4.3). */

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
-import { getSettings, resolveAvailability, updateSettings } from "./settings";
+import { effectiveAuditMode, getSettings, resolveAvailability, updateSettings } from "./settings";
 
 let db: Database;
 beforeEach(() => {
@@ -22,6 +22,8 @@ describe("settings repo", () => {
       operator_name: "",
       away_message: "",
       offline_at: null,
+      developer_mode: false,
+      audit_mode: "off",
     });
     expect(
       (db.prepare(`SELECT COUNT(*) AS n FROM settings`).get() as { n: number })
@@ -57,6 +59,8 @@ describe("settings repo", () => {
       operator_name: "",
       away_message: "",
       offline_at: null,
+      developer_mode: false,
+      audit_mode: "off",
     });
     expect(getSettings(db)).toEqual(s);
   });
@@ -81,6 +85,33 @@ describe("settings repo", () => {
       // @ts-expect-error — invalid on purpose
       updateSettings(db, { availability: "vacation" }),
     ).toThrow();
+  });
+
+  describe("developer mode gates the effective audit mode (analysis/05 §2)", () => {
+    it("effective mode is 'off' whenever developer mode is off, regardless of audit_mode", () => {
+      updateSettings(db, { developer_mode: false, audit_mode: "all" });
+      expect(effectiveAuditMode(getSettings(db))).toBe("off");
+    });
+
+    it("effective mode is the stored audit_mode when developer mode is on", () => {
+      updateSettings(db, { developer_mode: true, audit_mode: "flagged" });
+      expect(effectiveAuditMode(getSettings(db))).toBe("flagged");
+    });
+
+    it("toggling developer mode does not change the stored audit_mode", () => {
+      updateSettings(db, { developer_mode: true, audit_mode: "all" });
+      updateSettings(db, { developer_mode: false });
+      expect(getSettings(db).audit_mode).toBe("all"); // preserved
+      updateSettings(db, { developer_mode: true });
+      expect(getSettings(db).audit_mode).toBe("all"); // still there
+    });
+
+    it("round-trips the developer_mode boolean through SQLite", () => {
+      updateSettings(db, { developer_mode: true });
+      expect(getSettings(db).developer_mode).toBe(true);
+      updateSettings(db, { developer_mode: false });
+      expect(getSettings(db).developer_mode).toBe(false);
+    });
   });
 
   describe("resolveAvailability — lazy auto-offline (analysis/11 §4.1)", () => {

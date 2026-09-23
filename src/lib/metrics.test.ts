@@ -4,25 +4,27 @@ import { createMemoryDb } from "./db";
 import { seedDatabase } from "./seed";
 import { seedHistory } from "./seed/history";
 import {
-  aggregate,
+  assemble,
   computeDashboard,
   rangeStart,
   isTimeRange,
   type DashboardMetrics,
 } from "./metrics";
-import type { AuditMetricRow } from "./repo/audit";
+import type { DashboardRollup } from "./repo/metrics_rollup";
 import type { Escalation } from "./repo/escalations";
 
-function audit(over: Partial<AuditMetricRow>): AuditMetricRow {
+function rollup(over: Partial<DashboardRollup> = {}): DashboardRollup {
   return {
-    decision: "answered",
-    decision_reason: "grounded",
-    detected_intent: "hours",
-    parent_feedback: null,
-    cited_count: 1,
-    groundedness: null,
-    provider: "anthropic",
-    timestamp: "2026-09-20T00:00:00Z",
+    answered: 0,
+    escalated: 0,
+    outOfScope: 0,
+    answeredWithSource: 0,
+    groundednessSum: 0,
+    groundednessN: 0,
+    thumbsUp: 0,
+    thumbsDown: 0,
+    byIntent: [],
+    byProvider: [],
     ...over,
   };
 }
@@ -46,16 +48,22 @@ function esc(question: string, reason: string): Escalation {
   };
 }
 
-describe("aggregate (pure)", () => {
-  it("computes containment, attribution, hours saved, and feedback", () => {
-    const audits: AuditMetricRow[] = [
-      ...Array(6).fill(0).map(() => audit({ cited_count: 1 })),
-      audit({ cited_count: 0, parent_feedback: "up" }), // answered, no source
-      audit({ parent_feedback: "up" }),
-      audit({ decision: "escalated", decision_reason: "out_of_scope", detected_intent: "out_of_scope" }),
-      audit({ decision: "escalated", decision_reason: "sensitive:case_specific", detected_intent: "health", parent_feedback: "down" }),
-    ];
-    const m = aggregate(audits, [], 0, 0, 6);
+describe("assemble (pure, over the rollup)", () => {
+  it("computes containment, attribution, hours saved, and CSAT", () => {
+    const m = assemble(
+      rollup({
+        answered: 8,
+        escalated: 2,
+        outOfScope: 1,
+        answeredWithSource: 7,
+        thumbsUp: 2,
+        thumbsDown: 1,
+      }),
+      [],
+      0,
+      0,
+      6,
+    );
     expect(m.total).toBe(10);
     expect(m.answered).toBe(8);
     expect(m.escalated).toBe(2);
@@ -76,7 +84,7 @@ describe("aggregate (pure)", () => {
       esc("Nut-free classroom?", "out_of_scope"),
       esc("My child has a fever", "sensitive:case_specific"),
     ];
-    const m = aggregate([], escs, 0, 0);
+    const m = assemble(rollup(), escs, 0, 0);
     expect(m.topGaps.map((g) => [g.question, g.count])).toEqual([
       ["Do you offer part-time?", 3],
       ["Nut-free classroom?", 1],
@@ -84,34 +92,30 @@ describe("aggregate (pure)", () => {
     expect(m.topGaps.some((g) => g.question.includes("fever"))).toBe(false);
   });
 
-  it("averages async-judge groundedness over scored rows only", () => {
-    const m = aggregate(
-      [
-        audit({ groundedness: 0.9 }),
-        audit({ groundedness: 1.0 }),
-        audit({ groundedness: null }), // unscored — excluded from the average
-      ],
+  it("averages judge groundedness from the rollup sum/count", () => {
+    expect(assemble(rollup({ groundednessSum: 1.9, groundednessN: 2 }), [], 0, 0).groundedness).toBeCloseTo(0.95);
+  });
+
+  it("groundedness is null when nothing has been judged", () => {
+    expect(assemble(rollup({ groundednessN: 0 }), [], 0, 0).groundedness).toBeNull();
+  });
+
+  it("slices by provider only when more than one has handled traffic", () => {
+    const single = assemble(
+      rollup({ byProvider: [{ provider: "anthropic", total: 1, answered: 1, groundednessSum: 0, groundednessN: 0 }] }),
       [],
       0,
       0,
     );
-    expect(m.groundedness).toBeCloseTo(0.95);
-  });
-
-  it("groundedness is null when nothing has been judged", () => {
-    expect(aggregate([audit({ groundedness: null })], [], 0, 0).groundedness).toBeNull();
-  });
-
-  it("slices by provider only when more than one has handled traffic", () => {
-    const single = aggregate([audit({ provider: "anthropic" })], [], 0, 0);
     expect(single.byProvider).toEqual([]);
 
-    const both = aggregate(
-      [
-        audit({ provider: "anthropic", decision: "answered", groundedness: 0.9 }),
-        audit({ provider: "anthropic", decision: "escalated" }),
-        audit({ provider: "google", decision: "answered", groundedness: 0.8 }),
-      ],
+    const both = assemble(
+      rollup({
+        byProvider: [
+          { provider: "anthropic", total: 2, answered: 1, groundednessSum: 0.9, groundednessN: 1 },
+          { provider: "google", total: 1, answered: 1, groundednessSum: 0.8, groundednessN: 1 },
+        ],
+      }),
       [],
       0,
       0,
@@ -123,8 +127,8 @@ describe("aggregate (pure)", () => {
     expect(both.byProvider.find((p) => p.provider === "google")!.groundedness).toBeCloseTo(0.8);
   });
 
-  it("handles an empty log without dividing by zero", () => {
-    const m = aggregate([], [], 0, 0);
+  it("handles an empty rollup without dividing by zero", () => {
+    const m = assemble(rollup(), [], 0, 0);
     expect(m).toMatchObject<Partial<DashboardMetrics>>({
       total: 0,
       containmentRate: 0,

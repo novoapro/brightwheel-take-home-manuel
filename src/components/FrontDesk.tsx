@@ -41,7 +41,6 @@ type ChatMessage = {
   delivery?: "live" | "email";
   contactDone?: boolean;
   contactEmail?: string;
-  feedback?: "up" | "down";
 };
 
 /** POST /api/session — start/resume a persisted session by identity. */
@@ -90,10 +89,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * The parent front desk chat (analysis/03 §3) — mobile-first, warm, one
- * continuous voice. Grounded answers show attribution chips + 👍/👎; uncertain
- * or case-specific turns show a warm relay-pending state ("checking with our
+ * continuous voice. Grounded answers show attribution chips; uncertain or
+ * case-specific turns show a warm relay-pending state ("checking with our
  * team…◐"), and the staff reply streams into the thread live over SSE, marked
- * "✓ From our team".
+ * "✓ From our team". Rating the experience happens once, on the session, via a
+ * popup when the session ends (analysis/05 Tier 4).
  */
 export default function FrontDesk({
   center,
@@ -110,7 +110,17 @@ export default function FrontDesk({
   const [booting, setBooting] = useState(true);
   const [sessionNote, setSessionNote] = useState<string>();
   const [conversationId, setConversationId] = useState<string>();
+  // A pending close awaiting the parent's rating (analysis/05 Tier 4). While set,
+  // the rating popup is shown; the local reset is deferred until they rate or skip.
+  const [pendingClose, setPendingClose] = useState<{
+    sessionId: string;
+    note: string;
+    deleteServer: boolean;
+  } | null>(null);
   const sessionId = useRef<string | undefined>(undefined);
+  // Did the parent actually ask something this session? Only then is a rating
+  // worth prompting for. Tracked in a ref so SSE close handlers can read it.
+  const startedRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const started = messages.length > 0;
 
@@ -129,7 +139,9 @@ export default function FrontDesk({
       if (!res.ok || !d.ok) return d.error ?? "Could not start your session.";
       sessionId.current = d.sessionId;
       setConversationId(d.conversationId ?? undefined);
-      setMessages(Array.isArray(d.messages) ? d.messages : []);
+      const resumed = Array.isArray(d.messages) ? d.messages : [];
+      setMessages(resumed);
+      startedRef.current = resumed.length > 0;
       const p: ParentProfile = { name: d.name ?? name, email: d.email ?? email };
       setProfile(p);
       setSessionNote(undefined);
@@ -146,6 +158,7 @@ export default function FrontDesk({
   // Clear the local session (after the parent ends it, or the server closes it).
   const endLocal = useCallback((note?: string) => {
     sessionId.current = undefined;
+    startedRef.current = false;
     setConversationId(undefined);
     setMessages([]);
     setProfile(null);
@@ -157,14 +170,66 @@ export default function FrontDesk({
     }
   }, []);
 
+  /**
+   * A session is closing (parent CTA, staff/inactivity close). If they actually
+   * asked something, prompt for a rating first; otherwise reset straight away.
+   * `deleteServer` tells the DELETE apart (parent-initiated) from a close the
+   * server already performed (agent/inactivity).
+   */
+  const beginClose = useCallback(
+    (note: string, deleteServer: boolean) => {
+      const id = sessionId.current;
+      if (id && startedRef.current) {
+        setPendingClose({ sessionId: id, note, deleteServer });
+        return;
+      }
+      endLocal(note);
+      if (id && deleteServer) {
+        void fetch(`/api/session?sessionId=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
+    },
+    [endLocal],
+  );
+
+  // Resolve the pending close once the parent rates or skips: record the rating
+  // (which also applies the operator's audit retention), end the server session
+  // if we initiated it, and reset the UI.
+  const finalizeClose = useCallback(
+    (rating?: { rating: "up" | "down"; review: string }) => {
+      const pc = pendingClose;
+      if (!pc) return;
+      setPendingClose(null);
+      endLocal(pc.note);
+      void (async () => {
+        try {
+          if (rating) {
+            await fetch("/api/session/rating", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                sessionId: pc.sessionId,
+                rating: rating.rating,
+                review: rating.review || undefined,
+              }),
+            });
+          }
+          if (pc.deleteServer) {
+            await fetch(`/api/session?sessionId=${encodeURIComponent(pc.sessionId)}`, {
+              method: "DELETE",
+            });
+          }
+        } catch {
+          /* best-effort — the local session is already reset */
+        }
+      })();
+    },
+    [pendingClose, endLocal],
+  );
+
   function endSession() {
-    const id = sessionId.current;
-    endLocal("Your session has ended. Sign in again to start a new one.");
-    if (id) {
-      void fetch(`/api/session?sessionId=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      }).catch(() => {});
-    }
+    beginClose("Your session has ended. Sign in again to start a new one.", true);
   }
 
   // On mount, resume a stored session (by email) if one is saved.
@@ -226,19 +291,22 @@ export default function FrontDesk({
         ];
       });
     });
-    // The desk (or an inactivity sweep) ended this session — reset to sign-in.
+    // The desk (or an inactivity sweep) ended this session — prompt for a rating
+    // (if they asked anything), then reset to sign-in. The server already closed
+    // it, so no DELETE is needed.
     es.addEventListener("session_closed", (e) => {
       const { reason } = JSON.parse((e as MessageEvent).data) as {
         reason: "agent" | "inactivity";
       };
-      endLocal(
+      beginClose(
         reason === "inactivity"
           ? "Your session timed out. Sign in again to continue."
           : "Your session was ended by the front desk. Sign in again to start a new one.",
+        false,
       );
     });
     return () => es.close();
-  }, [conversationId, endLocal]);
+  }, [conversationId, beginClose]);
 
   async function send(question: string) {
     const q = question.trim();
@@ -246,6 +314,7 @@ export default function FrontDesk({
     setInput("");
     setBusy(true);
 
+    startedRef.current = true;
     const pendingKey = uid();
     setMessages((m) => [
       ...m,
@@ -264,9 +333,10 @@ export default function FrontDesk({
         }),
       });
       const data: AskResponse = await res.json();
-      // Session ended (closed by staff, or timed out) — send them back to sign-in.
+      // Session ended (closed by staff, or timed out) — prompt for a rating, then
+      // back to sign-in. The server already closed it, so no DELETE.
       if (res.status === 409 || data.sessionClosed) {
-        endLocal("Your session has ended. Sign in again to continue.");
+        beginClose("Your session has ended. Sign in again to continue.", false);
         return;
       }
       if (!data.ok) throw new Error(data.error ?? "Something went wrong.");
@@ -333,20 +403,6 @@ export default function FrontDesk({
       );
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function rate(msg: ChatMessage, feedback: "up" | "down") {
-    if (!msg.interactionId || msg.feedback) return;
-    setMessages((m) => m.map((x) => (x.key === msg.key ? { ...x, feedback } : x)));
-    try {
-      await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ interactionId: msg.interactionId, feedback }),
-      });
-    } catch {
-      /* best-effort */
     }
   }
 
@@ -435,7 +491,7 @@ export default function FrontDesk({
             </div>
           ) : (
             <div key={m.key} className="flex flex-col gap-2">
-              <FrontDeskBubble m={m} onRate={rate} logo={center.logo} />
+              <FrontDeskBubble m={m} logo={center.logo} />
               {m.delivery === "email" && (
                 <AwayContactForm m={m} onSubmit={submitContact} />
               )}
@@ -479,7 +535,108 @@ export default function FrontDesk({
         </>
       )}
 
+      {pendingClose && (
+        <RatingDialog
+          onSubmit={(rating, review) => finalizeClose({ rating, review })}
+          onSkip={() => finalizeClose()}
+        />
+      )}
+
       <PoweredByBrightwheel />
+    </div>
+  );
+}
+
+/**
+ * Close-session rating popup (analysis/05 Tier 4). Shown when the parent ends
+ * their session (or the desk closes it while they're present) — a warm 👍/👎 +
+ * an optional review. Skipping is always allowed. Mirrors the admin's hand-rolled
+ * modal shell (backdrop + role="dialog" + Escape).
+ */
+function RatingDialog({
+  onSubmit,
+  onSkip,
+}: {
+  onSubmit: (rating: "up" | "down", review: string) => void;
+  onSkip: () => void;
+}) {
+  const [rating, setRating] = useState<"up" | "down">();
+  const [review, setReview] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onSkip();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSkip]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4 backdrop-blur-[1px]"
+      onClick={onSkip}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Rate your visit"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl"
+      >
+        <h2 className="text-base font-semibold">How was your visit?</h2>
+        <p className="mt-1 text-xs text-muted">
+          Your feedback helps our team improve the front desk.
+        </p>
+
+        <div className="mt-4 flex justify-center gap-3">
+          {(["up", "down"] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRating(r)}
+              aria-pressed={rating === r}
+              aria-label={r === "up" ? "Good" : "Needs work"}
+              className={`grid h-16 w-16 place-items-center rounded-2xl border text-3xl transition ${
+                rating === r
+                  ? "border-brand bg-brand/10"
+                  : "border-border hover:border-brand"
+              }`}
+            >
+              {r === "up" ? "👍" : "👎"}
+            </button>
+          ))}
+        </div>
+
+        <label htmlFor="review" className="mt-4 block text-xs font-medium text-muted">
+          Anything we can improve? (optional)
+        </label>
+        <textarea
+          id="review"
+          value={review}
+          onChange={(e) => setReview(e.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder="Tell us more…"
+          className="mt-1 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
+        />
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:text-foreground"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            onClick={() => rating && onSubmit(rating, review.trim())}
+            disabled={!rating}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-fg disabled:opacity-40"
+          >
+            Submit
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -737,11 +894,9 @@ function AwayContactForm({
 
 function FrontDeskBubble({
   m,
-  onRate,
   logo,
 }: {
   m: ChatMessage;
-  onRate: (m: ChatMessage, f: "up" | "down") => void;
   logo?: string;
 }) {
   const isStaff = m.provenance === "staff";
@@ -813,22 +968,6 @@ function FrontDeskBubble({
         </div>
       )}
 
-      {/* Thumbs — CSAT (analysis/05 Tier 4) */}
-      {m.decision === "answered" && m.interactionId && (
-        <div className="ml-8 flex items-center gap-2 text-sm">
-          {m.feedback ? (
-            <span className="text-xs text-muted">
-              {m.feedback === "up" ? "Thanks for the feedback! 👍" : "Thanks — we'll do better. 👎"}
-            </span>
-          ) : (
-            <>
-              <span className="text-xs text-muted">Helpful?</span>
-              <button onClick={() => onRate(m, "up")} aria-label="Helpful" className="rounded-full px-1.5 py-0.5 hover:bg-you">👍</button>
-              <button onClick={() => onRate(m, "down")} aria-label="Not helpful" className="rounded-full px-1.5 py-0.5 hover:bg-you">👎</button>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }

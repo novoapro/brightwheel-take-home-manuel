@@ -25,6 +25,8 @@ describe("seedDatabase", () => {
       operator_name: "",
       away_message: "",
       offline_at: null,
+      developer_mode: false,
+      audit_mode: "off",
     });
     expect(countEntries(db)).toBe(ENTRIES.length);
   });

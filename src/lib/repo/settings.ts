@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import type { Settings } from "../types";
+import type { AuditMode, Settings } from "../types";
 
 /**
  * Repository for the single-row Settings (analysis/01 §2.6).
@@ -16,22 +16,37 @@ const DEFAULTS: Settings = {
   operator_name: "",
   away_message: "",
   offline_at: null,
+  developer_mode: false,
+  audit_mode: "off",
 };
+
+/** SQLite stores `developer_mode` as 0/1; the DB row shape before coercion. */
+type SettingsRow = Omit<Settings, "developer_mode"> & { developer_mode: number };
+
+/** Bind params for the settings row (developer_mode as an integer). */
+function toRow(s: Settings) {
+  return { ...s, developer_mode: s.developer_mode ? 1 : 0 };
+}
+
+/** The effective audit mode — "off" whenever developer mode is disabled. */
+export function effectiveAuditMode(s: Settings): AuditMode {
+  return s.developer_mode ? s.audit_mode : "off";
+}
 
 /** Read settings, creating the single row with defaults if absent. */
 export function getSettings(db: Database): Settings {
   const row = db
     .prepare(
-      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at
+      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode
          FROM settings WHERE id = 1`,
     )
-    .get() as Settings | undefined;
-  if (row) return row;
+    .get() as SettingsRow | undefined;
+  if (row) return { ...row, developer_mode: !!row.developer_mode };
 
   db.prepare(
-    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at)
-     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at)`,
-  ).run(DEFAULTS);
+    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode)
+     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at, @developer_mode, @audit_mode)`,
+  ).run(toRow(DEFAULTS));
   return { ...DEFAULTS };
 }
 
@@ -63,8 +78,10 @@ export function updateSettings(
             availability = @availability,
             operator_name = @operator_name,
             away_message = @away_message,
-            offline_at = @offline_at
+            offline_at = @offline_at,
+            developer_mode = @developer_mode,
+            audit_mode = @audit_mode
       WHERE id = 1`,
-  ).run(next);
+  ).run(toRow(next));
   return next;
 }

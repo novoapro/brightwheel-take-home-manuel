@@ -78,9 +78,16 @@ export function getEscalation(db: Database, id: string): Escalation | null {
 export function listWaitingEscalations(db: Database): Escalation[] {
   // rowid tiebreak keeps insertion order when two escalations from one session
   // share a millisecond timestamp — so "oldest first" is deterministic.
+  //
+  // `interaction_id IS NOT NULL` excludes a **detached** escalation: one whose
+  // interaction/session was removed (its interaction_id nulled). It has no live
+  // thread or parent to relay to, so it can't be a live-relay item — dropping it
+  // keeps the queue (and the dashboard's waiting count) honest.
   return db
     .prepare(
-      `SELECT * FROM escalations WHERE status = 'waiting' ORDER BY created_at, rowid`,
+      `SELECT * FROM escalations
+        WHERE status = 'waiting' AND interaction_id IS NOT NULL
+        ORDER BY created_at, rowid`,
     )
     .all() as Escalation[];
 }

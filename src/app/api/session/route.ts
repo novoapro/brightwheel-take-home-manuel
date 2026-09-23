@@ -6,6 +6,7 @@ import { getEscalation } from "@/lib/repo/escalations";
 import { listMessages } from "@/lib/repo/messages";
 import { getEntry } from "@/lib/repo/knowledge";
 import { resolveAvailability } from "@/lib/repo/settings";
+import { applyRetention } from "@/lib/retention";
 import {
   closeSession,
   createParentSession,
@@ -113,5 +114,8 @@ export async function DELETE(request: Request) {
   if (s && s.status === "open") {
     closeSession(db, sessionId, "parent" satisfies SessionCloseReason);
   }
+  // The rating (if any) was posted just before this close; apply the retention
+  // policy so a 👍 session's troubleshooting envelope is pruned under flagged/off.
+  applyRetention(db, sessionId);
   return NextResponse.json({ ok: true });
 }

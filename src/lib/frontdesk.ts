@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { decide, type FinalDecision } from "./guardrails/decide";
 import { getModel } from "./model";
-import type { FrontDeskModel, Msg } from "./model/types";
+import type { FrontDeskModel, GroundedResult, Msg } from "./model/types";
 import { buildSystemPrefix, relayMessage } from "./model/prompt";
 import { getCenter } from "./repo/center";
 import { listPublishedEntries } from "./repo/knowledge";
@@ -25,6 +25,16 @@ export interface AskInput {
 export interface AskResult extends FinalDecision {
   provider: string;
   model: string;
+  /**
+   * The raw request/response envelope for the audit trail (analysis/05 §2) —
+   * "what we sent the model and what it proposed", before the guardrail wrapper.
+   * Always populated; persisted (or not) per the operator's audit_mode.
+   */
+  debug: {
+    system: string;
+    messages: Msg[];
+    proposal: GroundedResult;
+  };
 }
 
 export async function ask(db: Database, input: AskInput): Promise<AskResult> {
@@ -56,5 +66,6 @@ export async function ask(db: Database, input: AskInput): Promise<AskResult> {
     ...decision,
     provider: model.provider,
     model: model.answererModel,
+    debug: { system, messages, proposal },
   };
 }

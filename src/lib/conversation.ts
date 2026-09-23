@@ -3,6 +3,8 @@ import type { Database } from "better-sqlite3";
 import { ask } from "./frontdesk";
 import type { FrontDeskModel, Msg } from "./model/types";
 import { insertAudit } from "./repo/audit";
+import { insertDebugEnvelope } from "./repo/debug";
+import { foldTurn } from "./repo/metrics_rollup";
 import {
   createConversation,
   getConversation,
@@ -11,7 +13,7 @@ import { createEscalation } from "./repo/escalations";
 import { appendMessage, listMessages } from "./repo/messages";
 import { getEntry } from "./repo/knowledge";
 import { publishQueueCount } from "./relay/queue";
-import { resolveAvailability } from "./repo/settings";
+import { effectiveAuditMode, resolveAvailability } from "./repo/settings";
 import type { EscalationDelivery } from "./types";
 
 /** Holding text when we relay while Away — pairs with the parent contact form. */
@@ -139,6 +141,30 @@ export async function handleTurn(
       checks: decision.checks,
       latency_first_response_ms: latencyMs,
     });
+
+    // Fold this turn into the durable metrics rollup — ALWAYS, independent of the
+    // audit setting, so the Dashboard never depends on the raw rows (which get
+    // pruned when audit isn't collecting). Groundedness folds later (async judge).
+    foldTurn(db, {
+      timestamp: new Date().toISOString(),
+      intent: decision.intent,
+      provider: decision.provider,
+      decision: auditDecision,
+      decision_reason: decision.reason,
+      cited_count: decision.citations.length,
+    });
+
+    // Capture the "what we sent / what we expected" envelope every turn (kept or
+    // pruned later per audit_mode) — unless audit is Off (or developer mode is
+    // off), when we collect nothing.
+    if (effectiveAuditMode(settings) !== "off") {
+      insertDebugEnvelope(db, {
+        interaction_id: interactionId,
+        system_prompt: decision.debug.system,
+        messages: decision.debug.messages,
+        raw_proposal: decision.debug.proposal,
+      });
+    }
 
     if (decision.decision === "relayed") {
       escalationId = randomUUID();

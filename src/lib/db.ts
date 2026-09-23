@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { migrate, SCHEMA_VERSION } from "./schema";
 import { countEntries } from "./repo/knowledge";
+import { metricsNeedBackfill, recomputeMetrics } from "./repo/metrics_rollup";
 
 /**
  * Single better-sqlite3 connection for the app.
@@ -30,6 +31,9 @@ export function getDb(): Database.Database {
   db.pragma("foreign_keys = ON");
 
   migrate(db);
+  // One-time backfill for databases created before the metrics rollup existed:
+  // build it from the raw audit rows still present (no-op once populated).
+  if (metricsNeedBackfill(db)) recomputeMetrics(db);
 
   _db = db;
   return db;
