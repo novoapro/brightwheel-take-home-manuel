@@ -218,7 +218,7 @@ export default function FrontDesk({
     setMessages((m) => [
       ...m,
       { key: uid(), role: "you", text: q },
-      { key: pendingKey, role: "frontdesk", text: "Looking into that…", pending: true },
+      { key: pendingKey, role: "frontdesk", text: "One moment…", pending: true },
     ]);
 
     try {
