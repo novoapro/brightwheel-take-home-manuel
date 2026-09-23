@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
 import { renderMarkdownLite } from "@/lib/markdown";
@@ -60,11 +60,10 @@ const STARTERS = [
   { emoji: "🚸", label: "Schedule a tour", question: "How do I schedule a tour?" },
 ];
 
-const SESSION_KEY = "la_frontdesk_session";
 const PROFILE_KEY = "la_frontdesk_profile";
 const uid = () => Math.random().toString(36).slice(2);
 
-/** Who the parent is, captured once at the start of a session (kept locally). */
+/** Who the parent is — kept locally to resume their server session by email. */
 type ParentProfile = { name: string; email: string };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -80,35 +79,78 @@ export default function FrontDesk({
   const [busy, setBusy] = useState(false);
   const [presenceState, setPresenceState] = useState<Presence | undefined>(presence);
   const [profile, setProfile] = useState<ParentProfile | null>(null);
+  const [booting, setBooting] = useState(true);
+  const [sessionNote, setSessionNote] = useState<string>();
   const [conversationId, setConversationId] = useState<string>();
   const sessionId = useRef<string | undefined>(undefined);
   const logRef = useRef<HTMLDivElement>(null);
   const started = messages.length > 0;
 
-  // Restore session id + parent profile so a returning parent keeps their thread
-  // and skips the welcome form.
-  useEffect(() => {
-    try {
-      sessionId.current = localStorage.getItem(SESSION_KEY) ?? undefined;
-      const saved = localStorage.getItem(PROFILE_KEY);
-      if (saved) {
-        const p = JSON.parse(saved) as ParentProfile;
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time read of a client-only value
-        if (p?.name && p?.email) setProfile(p);
+  // Start or resume a persisted server session by identity, then hydrate the
+  // thread (analysis/11 §6). Returns an error string, or undefined on success.
+  const enterSession = useCallback(
+    async (name: string, email: string): Promise<string | undefined> => {
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+      const d = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !d.ok) return d.error ?? "Could not start your session.";
+      sessionId.current = d.sessionId;
+      setConversationId(d.conversationId ?? undefined);
+      setMessages(Array.isArray(d.messages) ? (d.messages as ChatMessage[]) : []);
+      const p: ParentProfile = { name: d.name, email: d.email };
+      setProfile(p);
+      setSessionNote(undefined);
+      try {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+      } catch {
+        /* keep it in memory for this session */
       }
+      return undefined;
+    },
+    [],
+  );
+
+  // Clear the local session (after the parent ends it, or the server closes it).
+  const endLocal = useCallback((note?: string) => {
+    sessionId.current = undefined;
+    setConversationId(undefined);
+    setMessages([]);
+    setProfile(null);
+    setSessionNote(note);
+    try {
+      localStorage.removeItem(PROFILE_KEY);
     } catch {
-      /* localStorage may be unavailable — the form will show */
+      /* ignore */
     }
   }, []);
 
-  function startSession(p: ParentProfile) {
-    try {
-      localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-    } catch {
-      /* ignore — keep it in memory for this session */
+  async function endSession() {
+    const id = sessionId.current;
+    endLocal("Your session has ended. Sign in again to start a new one.");
+    if (id) {
+      void fetch(`/api/session?sessionId=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }).catch(() => {});
     }
-    setProfile(p);
   }
+
+  // On mount, resume a stored session (by email) if one is saved.
+  useEffect(() => {
+    void (async () => {
+      let saved: ParentProfile | null = null;
+      try {
+        const s = localStorage.getItem(PROFILE_KEY);
+        if (s) saved = JSON.parse(s) as ParentProfile;
+      } catch {
+        /* ignore */
+      }
+      if (saved?.name && saved?.email) await enterSession(saved.name, saved.email);
+      setBooting(false);
+    })();
+  }, [enterSession]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
@@ -190,15 +232,15 @@ export default function FrontDesk({
         }),
       });
       const data = await res.json();
+      // Session ended (closed by staff, or timed out) — send them back to sign-in.
+      if (res.status === 409 || data.sessionClosed) {
+        endLocal("Your session has ended. Sign in again to continue.");
+        return;
+      }
       if (!data.ok) throw new Error(data.error ?? "Something went wrong.");
 
       setConversationId(data.conversationId);
       sessionId.current = data.sessionId;
-      try {
-        localStorage.setItem(SESSION_KEY, data.sessionId);
-      } catch {
-        /* ignore */
-      }
 
       setMessages((m) =>
         m.map((msg) =>
@@ -307,12 +349,25 @@ export default function FrontDesk({
         <a href="/handbook" className="text-xs text-brand-strong hover:underline">
           Handbook
         </a>
+        {profile && (
+          <button
+            type="button"
+            onClick={endSession}
+            className="text-xs text-muted hover:text-red-600 hover:underline"
+          >
+            End session
+          </button>
+        )}
       </header>
 
       {presenceState && <PresenceBar presence={presenceState} />}
 
-      {!profile ? (
-        <ParentOnboarding center={center} onStart={startSession} />
+      {booting ? (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted">
+          Loading…
+        </div>
+      ) : !profile ? (
+        <ParentOnboarding center={center} note={sessionNote} onStart={enterSession} />
       ) : (
         <>
       <div
@@ -392,21 +447,28 @@ export default function FrontDesk({
  */
 function ParentOnboarding({
   center,
+  note,
   onStart,
 }: {
   center: CenterBrand;
-  onStart: (p: ParentProfile) => void;
+  note?: string;
+  onStart: (name: string, email: string) => Promise<string | undefined>;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
-  function submit() {
+  async function submit() {
     const n = name.trim();
     const e = email.trim();
     if (!n) return setError("Please enter your full name.");
     if (!EMAIL_RE.test(e)) return setError("Please enter a valid email.");
-    onStart({ name: n, email: e });
+    setBusy(true);
+    setError(undefined);
+    const err = await onStart(n, e);
+    setBusy(false);
+    if (err) setError(err);
   }
 
   return (
@@ -420,6 +482,12 @@ function ParentOnboarding({
           </p>
         </div>
       </div>
+
+      {note && (
+        <p className="rounded-lg border border-border bg-you px-3 py-2 text-center text-xs text-muted">
+          {note}
+        </p>
+      )}
 
       <div className="flex flex-col gap-3">
         <div>
@@ -451,9 +519,10 @@ function ParentOnboarding({
         {error && <p className="text-xs text-red-600">{error}</p>}
         <button
           onClick={submit}
-          className="mt-1 w-full rounded-xl bg-brand px-4 py-3 text-[15px] font-medium text-brand-fg transition hover:opacity-90"
+          disabled={busy}
+          className="mt-1 w-full rounded-xl bg-brand px-4 py-3 text-[15px] font-medium text-brand-fg transition hover:opacity-90 disabled:opacity-50"
         >
-          Start chat
+          {busy ? "Starting…" : "Start chat"}
         </button>
         <p className="text-center text-[11px] text-muted">
           We use this only to answer your questions. It stays with {center.name}.

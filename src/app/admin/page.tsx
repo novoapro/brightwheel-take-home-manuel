@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Dashboard from "@/components/admin/Dashboard";
 import HandbookEditor from "@/components/admin/HandbookEditor";
 import RelayQueue from "@/components/admin/RelayQueue";
+import SessionsPanel from "@/components/admin/SessionsPanel";
 import SettingsPanel from "@/components/admin/SettingsPanel";
 import BrandingPanel from "@/components/admin/BrandingPanel";
 import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
@@ -16,11 +17,12 @@ import FrontDeskLogo from "@/components/FrontDeskLogo";
  * §5.1), and Settings. A vertical rail scales as sections grow (unlike a
  * horizontal tab row) and reads as a panel inside Brightwheel.
  */
-type Tab = "dashboard" | "relay" | "handbook" | "branding" | "settings";
+type Tab = "dashboard" | "relay" | "sessions" | "handbook" | "branding" | "settings";
 
 const NAV: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "relay", label: "Live relay" },
+  { id: "sessions", label: "Sessions" },
   { id: "handbook", label: "Handbook" },
   { id: "branding", label: "Branding" },
   { id: "settings", label: "Settings" },
@@ -37,6 +39,14 @@ const ICON_PATHS: Record<Tab, React.ReactNode> = {
     </>
   ),
   relay: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  sessions: (
+    <>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
   handbook: (
     <>
       <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -315,6 +325,7 @@ export default function AdminPage() {
           <div className="mx-auto w-full max-w-3xl">
             {tab === "dashboard" && <Dashboard passcode={authCode} onOpenGaps={() => setTab("handbook")} />}
             {tab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
+            {tab === "sessions" && <SessionsPanel passcode={authCode} />}
             {tab === "handbook" && <HandbookEditor passcode={authCode} operatorName={operatorName} />}
             {tab === "branding" && <BrandingPanel passcode={authCode} />}
             {tab === "settings" && <SettingsPanel passcode={authCode} />}

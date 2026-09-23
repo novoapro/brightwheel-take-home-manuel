@@ -17,7 +17,7 @@ import type { Database } from "better-sqlite3";
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -66,6 +66,22 @@ CREATE TABLE IF NOT EXISTS policies (
   embedding      BLOB                         -- reserved, unpopulated in v1
 );
 CREATE INDEX IF NOT EXISTS idx_policies_intent_status ON policies (intent, status);
+
+-- parent_sessions: a persisted parent identity + thread (analysis/11 §6).
+-- Keyed by email so a returning parent resumes their open session; closed
+-- manually by the agent or after 30 min of inactivity.
+CREATE TABLE IF NOT EXISTS parent_sessions (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  email           TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  conversation_id TEXT,
+  created_at      TEXT NOT NULL,
+  last_active_at  TEXT NOT NULL,
+  closed_at       TEXT,
+  closed_reason   TEXT CHECK (closed_reason IN ('agent','inactivity','parent'))
+);
+CREATE INDEX IF NOT EXISTS idx_parent_sessions_email ON parent_sessions (email, status);
 
 -- conversations: a parent chat thread (powers the live relay)
 CREATE TABLE IF NOT EXISTS conversations (

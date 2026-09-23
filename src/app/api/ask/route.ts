@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { handleTurn } from "@/lib/conversation";
 import { judgeInteraction } from "@/lib/judge";
+import {
+  closeSession,
+  getParentSession,
+  isSessionStale,
+  touchSession,
+} from "@/lib/repo/sessions";
 
 // better-sqlite3 + the Anthropic SDK need the Node.js runtime (never Edge).
 export const runtime = "nodejs";
@@ -30,13 +36,29 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
+
+    // Enforce the session: a closed or timed-out session can't post — the parent
+    // is asked to sign in again (analysis/11 §6).
+    if (sessionId) {
+      const s = getParentSession(db, sessionId);
+      if (!s || s.status === "closed" || isSessionStale(s)) {
+        if (s && s.status === "open") closeSession(db, s.id, "inactivity");
+        return NextResponse.json(
+          { ok: false, sessionClosed: true, error: "Your session has ended." },
+          { status: 409 },
+        );
+      }
+    }
+
     const result = await handleTurn(db, {
       question,
       conversationId:
         typeof body.conversationId === "string" ? body.conversationId : undefined,
-      sessionId:
-        typeof body.sessionId === "string" ? body.sessionId : undefined,
+      sessionId,
     });
+
+    if (sessionId) touchSession(db, sessionId); // keep the session alive on activity
 
     // Off the critical path: score groundedness for the dashboard (analysis/04 §7).
     // The always-on container keeps this promise alive after the response returns.
