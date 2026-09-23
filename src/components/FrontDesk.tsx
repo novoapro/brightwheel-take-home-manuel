@@ -346,16 +346,30 @@ export default function FrontDesk({
           <h1 className="text-sm font-semibold leading-tight">{center.name}</h1>
           <p className="text-xs text-muted">{center.displayName}</p>
         </div>
-        <a href="/handbook" className="text-xs text-brand-strong hover:underline">
-          Handbook
+        <a
+          href="/handbook"
+          aria-label="Handbook"
+          title="Handbook"
+          className="grid h-9 w-9 place-items-center rounded-full text-brand-strong transition hover:bg-brand/10"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
         </a>
         {profile && (
           <button
             type="button"
             onClick={endSession}
-            className="text-xs text-muted hover:text-red-600 hover:underline"
+            aria-label="End session"
+            title="End session"
+            className="grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-red-500/10 hover:text-red-600"
           >
-            End session
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
           </button>
         )}
       </header>
@@ -668,13 +682,20 @@ function FrontDeskBubble({
   logo?: string;
 }) {
   const isStaff = m.provenance === "staff";
+  const isAI = m.provenance === "grounded";
   return (
     <div className="flex max-w-[90%] flex-col gap-2 self-start">
-      {isStaff && (
+      {isStaff ? (
+        // Human differentiator — a real person from the center.
         <div className="ml-8 flex items-center gap-1.5 text-xs font-medium text-brand-strong">
-          ✓ From our team{m.answeredBy ? ` · ${m.answeredBy}` : ""}
+          <span aria-hidden>👤</span> From our team{m.answeredBy ? ` · ${m.answeredBy}` : ""}
         </div>
-      )}
+      ) : isAI ? (
+        // AI differentiator — an automated answer grounded in the handbook.
+        <div className="ml-8 flex items-center gap-1.5 text-xs font-medium text-muted">
+          <span aria-hidden>✨</span> AI assistant
+        </div>
+      ) : null}
       <div className="flex items-start gap-2">
         {isStaff ? (
           <span className="mt-0.5 text-lg" aria-hidden>👤</span>
@@ -683,7 +704,11 @@ function FrontDeskBubble({
         )}
         <div
           className={`rounded-2xl rounded-tl-sm px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ${
-            isStaff ? "bg-brand/10 ring-brand/30" : "bg-surface ring-border"
+            isStaff
+              ? "bg-brand/10 ring-brand/30"
+              : isAI
+                ? "bg-surface ring-brand/20"
+                : "bg-surface ring-border"
           }`}
         >
           {m.pending ? (
