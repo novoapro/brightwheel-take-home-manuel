@@ -75,3 +75,20 @@ body {
     animation: none;
   }
 }
+
+/* "Thinking" indicator — three dots that bounce in sequence while the front
+ * desk composes an answer. Warmer and quieter than a spinner; the per-dot
+ * delay is set inline. Respects reduced-motion. */
+@keyframes thinkingbounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+.animate-thinkingdot {
+  animation: thinkingbounce 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-thinkingdot {
+    animation: none;
+    opacity: 0.6;
+  }
+}

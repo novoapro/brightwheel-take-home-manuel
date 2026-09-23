@@ -588,9 +588,9 @@ describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3
 
     expect(turn.decision).toBe("relayed");
     expect(turn.message.delivery).toBe("email");
-    // Honest holding text — no "real time" cue; pairs with the contact form.
+    // Honest holding text — no "real time" cue; pairs with the contact form
+    // (which is where the parent actually leaves their email).
     expect(turn.message.text).toMatch(/away right now/i);
-    expect(turn.message.text).toMatch(/email/i);
 
     const esc = getEscalation(db, turn.message.escalationId!)!;
     expect(esc.delivery).toBe("email");

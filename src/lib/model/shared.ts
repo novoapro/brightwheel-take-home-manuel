@@ -14,7 +14,7 @@ import type { JudgeInput } from "./types";
 
 /** Structured answerer output (analysis/04 §4.2). */
 export const GroundedResultSchema = z.object({
-  intent: z.enum(["hours", "tuition", "health", "meals", "tours", "out_of_scope"]),
+  intent: z.enum(["hours", "tuition", "health", "meals", "tours", "social", "out_of_scope"]),
   is_case_specific: z.boolean(),
   sensitive_category: z.enum(SENSITIVE_CATEGORIES).nullable(),
   grounding_confidence: z.number().min(0).max(1),

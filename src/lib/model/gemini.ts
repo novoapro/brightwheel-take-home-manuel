@@ -27,7 +27,7 @@ const GEMINI_JUDGE_MODEL = process.env.GEMINI_JUDGE_MODEL ?? "gemini-flash-lite-
 const GROUNDED_SCHEMA = {
   type: "object",
   properties: {
-    intent: { type: "string", enum: ["hours", "tuition", "health", "meals", "tours", "out_of_scope"] },
+    intent: { type: "string", enum: ["hours", "tuition", "health", "meals", "tours", "social", "out_of_scope"] },
     is_case_specific: { type: "boolean" },
     sensitive_category: { type: "string", enum: [...SENSITIVE_CATEGORIES, "none"] },
     grounding_confidence: { type: "number" },

@@ -238,3 +238,68 @@ describe("decide — relay copy", () => {
     expect(d.parent_message.toLowerCase()).toContain("team");
   });
 });
+
+describe("decide — greetings & small talk (social)", () => {
+  it("answers a clean greeting warmly, with no citation and no relay", async () => {
+    const { ctx, state } = ctxWith();
+    const d = await decide(
+      mk({
+        intent: "social",
+        citations: [],
+        parent_message: "Hi! How can I help you today?",
+      }),
+      ctx,
+    );
+    expect(d.decision).toBe("answered");
+    expect(d.reason).toBe("social");
+    expect(d.citations).toEqual([]);
+    expect(d.parent_message).toContain("Hi!");
+    expect(state.calls).toBe(0); // no judge call — nothing to ground
+  });
+
+  it("relays a 'social' reply that smuggles a policy fact (no ungrounded numbers)", async () => {
+    const { ctx } = ctxWith();
+    const d = await decide(
+      mk({
+        intent: "social",
+        citations: [],
+        parent_message: "Hi! We open at 7:00, see you then.",
+      }),
+      ctx,
+    );
+    expect(d.decision).toBe("relayed");
+    expect(d.reason).toBe("fact_mismatch");
+    expect(d.checks.fact_match).toBe("fail");
+  });
+
+  it("still escalates a hard-sensitive message even if mislabeled social", async () => {
+    const { ctx } = ctxWith();
+    const d = await decide(
+      mk({
+        intent: "social",
+        citations: [],
+        sensitive_category: "safety",
+        parent_message: "Hi there!",
+      }),
+      ctx,
+    );
+    expect(d.decision).toBe("relayed");
+    expect(d.reason).toBe("sensitive:safety");
+  });
+
+  it("escalates a case-specific message with a sensitive category over the social lane", async () => {
+    const { ctx } = ctxWith();
+    const d = await decide(
+      mk({
+        intent: "social",
+        citations: [],
+        is_case_specific: true,
+        sensitive_category: "billing",
+        parent_message: "Hey!",
+      }),
+      ctx,
+    );
+    expect(d.decision).toBe("relayed");
+    expect(d.reason).toBe("sensitive:case_specific");
+  });
+});

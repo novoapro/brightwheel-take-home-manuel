@@ -187,7 +187,7 @@ export default function FrontDesk({
       if (id && deleteServer) {
         void fetch(`/api/session?sessionId=${encodeURIComponent(id)}`, {
           method: "DELETE",
-        }).catch(() => {});
+        }).catch(() => { });
       }
     },
     [endLocal],
@@ -348,23 +348,23 @@ export default function FrontDesk({
         m.map((msg) =>
           msg.key === pendingKey
             ? {
-                key: pendingKey,
-                role: "frontdesk",
-                text: data.message.text,
-                provenance: data.message.provenance,
-                citations: data.message.citations,
-                interactionId: data.interactionId,
-                decision: data.decision,
-                escalationId: data.message.escalationId,
-                delivery: data.message.delivery ?? undefined,
-                // Live relays wait on SSE; Away (email) waits on the contact form.
-                relayPending:
-                  data.decision === "relayed" && data.message.delivery === "live",
-                // We already know who they are from the session — auto-confirm.
-                contactDone:
-                  data.message.delivery === "email" && !!profile,
-                contactEmail: profile?.email,
-              }
+              key: pendingKey,
+              role: "frontdesk",
+              text: data.message.text,
+              provenance: data.message.provenance,
+              citations: data.message.citations,
+              interactionId: data.interactionId,
+              decision: data.decision,
+              escalationId: data.message.escalationId,
+              delivery: data.message.delivery ?? undefined,
+              // Live relays wait on SSE; Away (email) waits on the contact form.
+              relayPending:
+                data.decision === "relayed" && data.message.delivery === "live",
+              // We already know who they are from the session — auto-confirm.
+              contactDone:
+                data.message.delivery === "email" && !!profile,
+              contactEmail: profile?.email,
+            }
             : msg,
         ),
       );
@@ -393,11 +393,11 @@ export default function FrontDesk({
         m.map((msg) =>
           msg.key === pendingKey
             ? {
-                key: pendingKey,
-                role: "frontdesk",
-                text: "I'm having trouble reaching our system — let me get our team on this.",
-                relayPending: true,
-              }
+              key: pendingKey,
+              role: "frontdesk",
+              text: "I'm having trouble reaching our system — let me get our team on this.",
+              relayPending: true,
+            }
             : msg,
         ),
       );
@@ -471,67 +471,67 @@ export default function FrontDesk({
         <ParentOnboarding center={center} note={sessionNote} onStart={enterSession} />
       ) : (
         <>
-      <div
-        ref={logRef}
-        role="log"
-        aria-live="polite"
-        aria-label="Conversation with the front desk"
-        className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5"
-      >
-        {!started && (
-          <Welcome onPick={send} welcome={center.welcomeMessage || DEFAULT_WELCOME} />
-        )}
+          <div
+            ref={logRef}
+            role="log"
+            aria-live="polite"
+            aria-label="Conversation with the front desk"
+            className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5"
+          >
+            {!started && (
+              <Welcome onPick={send} welcome={center.welcomeMessage || DEFAULT_WELCOME} />
+            )}
 
-        {messages.map((m) =>
-          m.role === "you" ? (
-            <div key={m.key} className="self-end max-w-[85%]">
-              <div className="rounded-2xl rounded-br-sm bg-you px-4 py-2.5 text-[15px] leading-snug">
-                {m.text}
-              </div>
-            </div>
-          ) : (
-            <div key={m.key} className="flex flex-col gap-2">
-              <FrontDeskBubble m={m} logo={center.logo} />
-              {m.delivery === "email" && (
-                <AwayContactForm m={m} onSubmit={submitContact} />
-              )}
-            </div>
-          ),
-        )}
-      </div>
+            {messages.map((m) =>
+              m.role === "you" ? (
+                <div key={m.key} className="self-end max-w-[85%]">
+                  <div className="rounded-2xl rounded-br-sm bg-you px-4 py-2.5 text-[15px] leading-snug">
+                    {m.text}
+                  </div>
+                </div>
+              ) : (
+                <div key={m.key} className="flex flex-col gap-2">
+                  <FrontDeskBubble m={m} logo={center.logo} />
+                  {m.delivery === "email" && (
+                    <AwayContactForm m={m} onSubmit={submitContact} />
+                  )}
+                </div>
+              ),
+            )}
+          </div>
 
-      <form
-        className="flex items-end gap-2 border-t border-border px-3 py-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-      >
-        <label htmlFor="q" className="sr-only">Type your question</label>
-        <textarea
-          id="q"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+          <form
+            className="flex items-end gap-2 border-t border-border px-3 py-3"
+            onSubmit={(e) => {
               e.preventDefault();
               send(input);
-            }
-          }}
-          rows={1}
-          placeholder="Type your question…"
-          className="min-h-[44px] flex-1 resize-none rounded-2xl border border-border bg-surface px-4 py-2.5 text-[15px] outline-none focus:border-brand"
-        />
-        <button
-          type="submit"
-          disabled={busy || !input.trim()}
-          aria-busy={busy}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-brand-fg disabled:opacity-40"
-          aria-label="Send"
-        >
-          ▷
-        </button>
-      </form>
+            }}
+          >
+            <label htmlFor="q" className="sr-only">Type your question</label>
+            <textarea
+              id="q"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              rows={1}
+              placeholder="Type your question…"
+              className="min-h-[44px] flex-1 resize-none rounded-2xl border border-border bg-surface px-4 py-2.5 text-[15px] outline-none focus:border-brand"
+            />
+            <button
+              type="submit"
+              disabled={busy || !input.trim()}
+              aria-busy={busy}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-brand-fg disabled:opacity-40"
+              aria-label="Send"
+            >
+              ▷
+            </button>
+          </form>
         </>
       )}
 
@@ -595,11 +595,10 @@ function RatingDialog({
               onClick={() => setRating(r)}
               aria-pressed={rating === r}
               aria-label={r === "up" ? "Good" : "Needs work"}
-              className={`grid h-16 w-16 place-items-center rounded-2xl border text-3xl transition ${
-                rating === r
-                  ? "border-brand bg-brand/10"
-                  : "border-border hover:border-brand"
-              }`}
+              className={`grid h-16 w-16 place-items-center rounded-2xl border text-3xl transition ${rating === r
+                ? "border-brand bg-brand/10"
+                : "border-border hover:border-brand"
+                }`}
             >
               {r === "up" ? "👍" : "👎"}
             </button>
@@ -774,7 +773,7 @@ function PresenceStatus({ presence }: { presence: Presence }) {
   const explanation = online
     ? "A team member is at the front desk right now, so anything the front desk can't answer goes straight to a person who can reply in real time."
     : presence.awayMessage?.trim() ||
-      "The front desk can still answer common questions from our handbook. For anything it's unsure about, leave your email and our team will follow up — usually within one business day.";
+    "The front desk can still answer common questions from our handbook. For anything it's unsure about, leave your email and our team will follow up — usually within one business day.";
 
   return (
     <div className="relative">
@@ -787,9 +786,8 @@ function PresenceStatus({ presence }: { presence: Presence }) {
       >
         <span
           aria-hidden
-          className={`h-2 w-2 rounded-full ${
-            online ? "bg-green-500 animate-softpulse" : "bg-amber-500"
-          }`}
+          className={`h-2 w-2 rounded-full ${online ? "bg-green-500 animate-softpulse" : "bg-amber-500"
+            }`}
         />
         {label}
       </button>
@@ -840,9 +838,9 @@ function AwayContactForm({
   if (m.contactDone) {
     return (
       <div className="ml-8 rounded-xl border border-brand/30 bg-brand/5 px-3 py-2 text-xs text-brand-strong">
-        ✓ Thanks! We&apos;ll email you at {m.contactEmail} — usually within one
+        ✓ An email will be sent to <b>{m.contactEmail} </b > usually within one
         business day.
-      </div>
+      </div >
     );
   }
 
@@ -892,6 +890,32 @@ function AwayContactForm({
   );
 }
 
+/**
+ * The "front desk is thinking" cue — three dots bouncing in sequence, shown in
+ * the pending bubble while a grounded answer is composed. Calmer than a spinner
+ * and reads instantly as "typing"; the animation is defined in globals.css and
+ * disables itself under prefers-reduced-motion.
+ */
+function ThinkingDots() {
+  return (
+    <span
+      role="status"
+      aria-label="The front desk is thinking"
+      className="inline-flex items-center gap-1 py-1"
+    >
+      <span className="sr-only">The front desk is thinking…</span>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="h-1.5 w-1.5 rounded-full bg-muted animate-thinkingdot"
+          style={{ animationDelay: `${i * 0.18}s` }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function FrontDeskBubble({
   m,
   logo,
@@ -924,18 +948,15 @@ function FrontDeskBubble({
           <BrandMark logo={logo} className="mt-0.5" imgSize={22} />
         )}
         <div
-          className={`rounded-2xl rounded-tl-sm px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ${
-            isStaff
-              ? "bg-brand/10 ring-brand/30"
-              : isAI
-                ? "bg-surface ring-brand/20"
-                : "bg-surface ring-border"
-          }`}
+          className={`rounded-2xl rounded-tl-sm px-4 py-2.5 text-[15px] leading-snug shadow-sm ring-1 ${isStaff
+            ? "bg-brand/10 ring-brand/30"
+            : isAI
+              ? "bg-surface ring-brand/20"
+              : "bg-surface ring-border"
+            }`}
         >
           {m.pending ? (
-            <span className="text-muted">
-              {m.text} <span className="animate-softpulse">◐</span>
-            </span>
+            <ThinkingDots />
           ) : (
             <span className="whitespace-pre-wrap">{m.text}</span>
           )}

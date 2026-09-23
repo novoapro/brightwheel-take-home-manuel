@@ -140,7 +140,7 @@ Reuses the escalation machinery ([01 §2.3], [03 §3.3]) with a delivery mode:
 - **Online** → escalation `delivery: "live"` → SSE relay into the thread (unchanged).
 - **Away** → escalation `delivery: "email"`:
   1. Instead of "checking with our team…◐ (live)", the front desk shows an inline **contact capture**: *"Where should we send the answer?"* → name + email.
-  2. On submit: escalation created `delivery:"email", status:"waiting"`, contact stored; parent sees *"Thanks! We'll email you at a…@… within one business day."* Provenance stays truthful (no fake live cue).
+  2. On submit: escalation created `delivery:"email", status:"waiting"`, contact stored; parent sees *"We'll email you at a…@… within one business day."* Provenance stays truthful (no fake live cue).
   3. The parent can keep asking handbook questions meanwhile.
 - **Grounded answers are unaffected** by availability — only the escalation path branches.
 

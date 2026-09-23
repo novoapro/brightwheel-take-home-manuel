@@ -40,15 +40,21 @@ export default function HandbookPage() {
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-8">
-      <header className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      {/* Pinned so "← Front desk" is one tap away from anywhere in a long
+          handbook — no scrolling back to the top. The negative margins let the
+          blurred bar span the page padding edge-to-edge. */}
+      <header className="sticky top-0 z-20 -mx-5 mb-6 flex items-center justify-between gap-3 border-b border-border bg-background/85 px-5 py-3 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-2">
           <BrandMark logo={center?.logo} />
-          <div>
-            <h1 className="text-lg font-semibold">{center?.name ?? "Family"} — Family Handbook</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold">{center?.name ?? "Family"} — Family Handbook</h1>
             <p className="text-xs text-muted">The answers behind our front desk.</p>
           </div>
         </div>
-        <Link href="/" className="text-sm text-brand-strong hover:underline">
+        <Link
+          href="/"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium text-brand-strong transition hover:border-brand"
+        >
           ← Front desk
         </Link>
       </header>

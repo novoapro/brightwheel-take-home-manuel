@@ -31,6 +31,32 @@ Parent question
 [Async, off critical path] LLM-as-judge groundedness score → InteractionAudit.judge_scores (§7)
 ```
 
+### 1.1 Sizing bounds & the scale-up trigger — why full-context is the right call here
+
+**Scope:** this is a **single-tenant** deployment (one center). The concern this section settles: *how large can one center's published KB grow before "send it all in the cached prefix" stops being the right choice, and what do we do then?*
+
+**The context window is not the binding constraint.** Sonnet 5 holds 1M tokens; we never approach it. Three other limits bite first, in this order:
+
+1. **Retrieval quality (bites first, matters most).** As context grows, models get measurably worse at pulling the *right* fact out of it ("lost in the middle" / needle-in-haystack). For a grounded FAQ where a wrong number must never reach a parent, this is the constraint we care about. Industry rule of thumb ([01 §1.1](01-data-and-knowledge-model.md)): **under ~200K tokens, full-context reliably beats retrieval**; past that, accuracy starts to favor a retrieved subset. This is the 2026 **CAG (cache-augmented) vs RAG** tradeoff — CAG wins on corpora that are *small, stable, and broadly queried*, which is exactly ours.
+2. **Cost under sparse traffic.** Caching is wired (`cache_control: ephemeral` on the system prefix). Per-call economics on Sonnet 5: cache **write** (cold) = $2.50/1M (1.25×), cache **read** (warm) = $0.20/1M (0.1×), uncached = $2.00/1M. The catch: the default cache TTL is **5 minutes**, and a single front desk gets *bursty, sparse* traffic (a few questions an hour), so the cache keeps going cold and re-paying the write. **Fix: set `ttl: "1h"` on the cached system block** — cheap insurance against re-warming. (See [Decisions §9](#9-decisions).)
+3. **Latency.** A cached prefix still has to be *processed* on read, so a bigger prefix adds latency even on a cache hit — negligible at tens of thousands of tokens, noticeable in the hundreds of thousands.
+
+**Sizing bands** (atomic policy record ≈ 150–400 tokens = title + body + structured JSON):
+
+| Band | One center's published KB | Action |
+|---|---|---|
+| 🟢 **Green** | up to ~30–50K tokens (~100–250 policies) | Full-context + caching is *optimal*. Just set `ttl: "1h"`. |
+| 🟡 **Yellow** | ~50K–200K tokens | Still works, quality generally holds; add a **BM25 pre-filter** (below) to trim per-call cost/latency and hedge retrieval quality. |
+| 🔴 **Red** | >~200K tokens | Move to real retrieval (BM25 now, vector/hybrid later); also entering lost-in-the-middle territory for grounding. |
+
+**Reality check:** a real single daycare's *entire* family handbook is ~20–40 pages ≈ 10–20K tokens as raw prose — smaller as atomic records, of which only `published` ones enter the prompt. **One center essentially never leaves 🟢 from its handbook alone.** The only realistic paths to 🟡 are (a) an admin pasting a large *unstructured* document, or (b) the captured-Q&A curation loop compounding over *years*. So for this project the current design isn't just adequate — it's the correct call, and defensibly so.
+
+**The scale-up step (when 🟡):** a **BM25 pre-filter**. BM25 is a classic lexical keyword-ranking algorithm (TF-IDF's successor); a *pre-filter* runs the parent's question through it against the policy records *before* the LLM call and sends only the top-K matches instead of the whole KB. It ships **for free in SQLite FTS5** (no new dependency, no embeddings), and — crucially — the retrieved records are still real, pinned, structured records, so the deterministic fact-check (§3) is unchanged. This is the pipeline already reserved in [01 §3](01-data-and-knowledge-model.md).
+
+**Why not agentic / model-driven retrieval on the parent path.** The tempting alternative — give the model `search`/`fetch` tools and let it ask for what it needs — is a legitimate 2026 pattern but the wrong shape *here*: (a) it adds LLM round trips, fighting the one-round-trip phone-latency budget; (b) it hands *the model* control of what gets grounded against, reintroducing exactly the non-determinism ("didn't retrieve the relevant policy", "right source, wrong number") that the deterministic wrapper (§3, [07](07-hallucination-guardrails-review.md)) exists to eliminate. Deterministic pre-filtering keeps *code* in control of the grounding set. Reserve agentic retrieval for the operator/curation side, where latency and determinism don't carry the same weight.
+
+Sources: [RAG vs CAG 2026](https://futureagi.com/blog/rag-vs-cag-cache-augmented-generation-2026/) · [When to stop retrieving and just cache](https://futureagi.substack.com/p/rag-vs-cag-when-to-stop-retrieving) · [Long context vs RAG — the 2026 data](https://usewire.io/blog/long-context-vs-rag-what-the-data-shows/) · [Agentic RAG vs standard RAG](https://www.mindstudio.ai/blog/agentic-rag-vs-standard-rag-multi-layer-retrieval).
+
 ---
 
 ## 2. The escalation decision — "policy = answer, case = escalate"
@@ -104,6 +130,16 @@ async function decide(model: GroundedResult, intent: Intent): Promise<FinalDecis
 ```
 
 `relay(...)` triggers the **live staff relay** exactly as an unknown does. Two checks carry the most weight: **3c deterministic fact verification** (numbers/dates matched against the structured source — impossible to show a parent a wrong fever threshold) and **3e the inline groundedness gate** (held to **≥0.9 for sensitive**, the regulated-domain bar). Full rationale + industry mapping: [07-hallucination-guardrails-review.md](07-hallucination-guardrails-review.md).
+
+### 3.1 Greetings & small talk — a safe conversational lane
+
+Not every parent message is a policy question. A bare greeting, thanks, or goodbye ("hi", "how are you?", "bye") has no handbook entry, so the citation gate (§3b) would relay it to a human — a cold, wasteful hand-off for "hello", exactly the kind of low-value load the front desk should absorb. We add a narrow **`social`** intent: the model may answer a pure pleasantry warmly and *without* a citation, but the deterministic wrapper keeps it airtight:
+
+- **No citations, no facts.** A social reply must carry zero citations and pass the §3c fact-check against an *empty* source set — so any number/date/time/price makes it fail and relay. The model therefore cannot smuggle an ungrounded policy answer ("we open at 7:00") under the `social` label.
+- **Sensitive/case-specific still wins first.** The hard-sensitive and case-specific routes (§3a) run *before* the social lane, so a message that only *looks* like a greeting ("hi, my son has a fever") still escalates.
+- **Mixed messages defer to the question.** A greeting bundled with a real question is classified by the question, never as social (prompt rule, §4.1).
+
+Net effect: warmth for "hi", **zero new hallucination surface** for everything else. This is a deliberate widening of "policy = answer, everything else = relay" to admit *contentless* social turns — the one class of non-policy message that's safe to answer because it makes no factual claim.
 
 ---
 
@@ -282,8 +318,9 @@ We ship **two real alternate implementations** — OpenAI and Google — behind 
 1. **Answerer model:** ✅ **Sonnet 5** (parent-facing) + **Haiku 4.5** (async judge). Opus 5 reachable via the provider layer for hard cases. Cost/latency-right for a phone chat.
 2. **Escalation copy:** ✅ **Templated per-category relay/holding message + light model personalization** ("checking with our team — one moment"), *not* a handoff or callback promise. Front desk stays in control; staff answer relays into the same thread in real time, marked `staff` provenance. `HARD_SENSITIVE` categories lean most on the template. See [03 §3.3](03-ux-flows.md).
 3. **Thresholds:** ✅ **Bias-to-escalate, but operator-configurable** (§2). Ship 0.75/0.9 defaults; expose a "caution level" in the control center; `HARD_SENSITIVE` is floor-locked and never tunable down.
+4. **Grounding strategy & scale-up trigger:** ✅ **Full-context + prompt caching** for this single-tenant PoC (§1.1) — the context window is not the constraint; retrieval quality, then sparse-traffic cost, then latency are. A real center's KB sits comfortably in the 🟢 band, so no retrieval is built. Documented scale-up when 🟡: a **BM25 pre-filter via SQLite FTS5** (deterministic, guardrail-preserving), *not* agentic/model-driven retrieval on the parent path; vector/hybrid deferred to the pgvector migration. **Set `ttl: "1h"`** on the cached prefix so a front desk's bursty traffic doesn't keep re-warming the 5-min cache.
 
 **Still open (later stages):**
-4. **Confidence source.** Self-reported `grounding_confidence` on the critical path (chosen for latency) + async judge for measurement. Revisit only if self-report proves unreliable against the seeded set.
-5. **Effort tuning.** Exact `output_config.effort` for the answerer — tune low↔medium against latency/quality on real questions (Stage 06).
+5. **Confidence source.** Self-reported `grounding_confidence` on the critical path (chosen for latency) + async judge for measurement. Revisit only if self-report proves unreliable against the seeded set.
+6. **Effort tuning.** Exact `output_config.effort` for the answerer — tune low↔medium against latency/quality on real questions (Stage 06).
 ```

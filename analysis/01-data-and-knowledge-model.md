@@ -139,7 +139,7 @@ The loop is literally an edge in the schema: an `Escalation.operator_answer` bec
 
 ## 3. Grounding & retrieval pipeline
 
-> **v1 reality (per [04 §1](04-grounding-and-prompts.md)):** because the corpus is tiny (~15–25 records), v1 **skips separate classify + retrieve** and passes **all published policies in the prompt-cached prefix**, doing grounding in **one call**. The classify → structured-filter → keyword-rank pipeline below is the **scale-up path** for when the corpus outgrows a single cached prefix. Kept here as the design that generalizes.
+> **v1 reality (per [04 §1](04-grounding-and-prompts.md)):** because the corpus is tiny (~15–25 records), v1 **skips separate classify + retrieve** and passes **all published policies in the prompt-cached prefix**, doing grounding in **one call**. The classify → structured-filter → keyword-rank pipeline below is the **scale-up path** for when the corpus outgrows a single cached prefix. Kept here as the design that generalizes. **Sizing bounds (single-tenant), cache economics, and the exact 🟢/🟡/🔴 trigger for switching to a BM25 pre-filter are in [04 §1.1](04-grounding-and-prompts.md#11-sizing-bounds--the-scale-up-trigger--why-full-context-is-the-right-call-here).**
 
 Deterministic-first, semantic-assist. For a parent question (scale-up form):
 

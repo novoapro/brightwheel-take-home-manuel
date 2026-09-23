@@ -25,6 +25,12 @@ describe("buildSystemPrefix", () => {
     expect(s).toContain("check with our team");
   });
 
+  it("documents the social/greeting lane (answer pleasantries without a citation)", () => {
+    const s = build();
+    expect(s).toContain("Greetings & small talk");
+    expect(s).toContain('intent="social"');
+  });
+
   it("embeds every published policy with its id and structured data", () => {
     const s = build();
     for (const p of listPublishedEntries(db)) {

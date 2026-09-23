@@ -21,6 +21,7 @@ export type Decision = "answered" | "relayed";
 /** Canonical decision_reason set — analysis/09 §4.4. */
 export type DecisionReason =
   | "grounded"
+  | "social"
   | "no_citation"
   | "invalid_citation"
   | "fact_mismatch"
@@ -103,6 +104,47 @@ export async function decide(
     checks,
     ...extra,
   });
+
+  // Greetings & small talk (analysis/04 §3.1): a pure pleasantry has no handbook
+  // entry, so the citation gate would relay "hello" to staff — a cold, wasteful
+  // hand-off. Instead we let the model answer warmly WITHOUT a citation, but keep
+  // it airtight: a social reply must carry no citations and no checkable facts,
+  // and any sensitive/case-specific signal still escalates first. The model can't
+  // smuggle an ungrounded policy answer ("we open at 7:00") under this label —
+  // the fact-check blocks it and it relays like any other unsupported claim.
+  if (intent === "social") {
+    if (
+      model.sensitive_category &&
+      (HARD_SENSITIVE as readonly string[]).includes(model.sensitive_category)
+    ) {
+      return relay(`sensitive:${model.sensitive_category}`);
+    }
+    if (
+      model.is_case_specific &&
+      (model.sensitive_category !== null || sensitiveIntent)
+    ) {
+      return relay("sensitive:case_specific");
+    }
+    // A genuine pleasantry cites nothing; a citation means it's not small talk.
+    if (model.citations.length > 0) return relay("out_of_scope");
+    const socialFacts = verifyFacts(model.parent_message, []);
+    if (!socialFacts.ok) {
+      checks.fact_match = "fail";
+      return relay("fact_mismatch", { unsupported_facts: socialFacts.unsupported });
+    }
+    checks.fact_match = "pass";
+    return {
+      decision: "answered",
+      reason: "social",
+      parent_message: model.parent_message,
+      citations: [],
+      intent,
+      sensitive_category: model.sensitive_category,
+      is_case_specific: model.is_case_specific,
+      grounding_confidence: model.grounding_confidence,
+      checks,
+    };
+  }
 
   // Out-of-scope: nothing in the handbook covers it → relay (analysis/09 §4.4).
   if (intent === "out_of_scope") return relay("out_of_scope");

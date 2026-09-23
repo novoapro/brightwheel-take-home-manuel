@@ -18,7 +18,7 @@ import type { EscalationDelivery } from "./types";
 
 /** Holding text when we relay while Away — pairs with the parent contact form. */
 const AWAY_RELAY_TEXT =
-  "I want to get this exactly right, so I'll pass it to our team. We're away right now — leave your email below and we'll follow up, usually within one business day.";
+  "I want to get this exactly right, so I'll pass it to our team. We're away right now.";
 
 /**
  * The parent-turn orchestrator (analysis/03 §3.4, analysis/04 §1): runs the
