@@ -12,7 +12,6 @@ type Entry = {
   body_md: string;
   structured: Record<string, unknown>;
   keywords: string[];
-  sensitivity: "none" | "sensitive";
   status: "published" | "draft" | "unpublished";
   origin: "seed" | "captured";
   source: string | null;
@@ -25,7 +24,6 @@ type Draft = {
   body_md: string;
   structuredText: string;
   keywords: string;
-  sensitivity: "none" | "sensitive";
   status: "published" | "draft" | "unpublished";
   source: string;
 };
@@ -50,7 +48,6 @@ export default function KnowledgeBaseEditor({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [addingCategory, setAddingCategory] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [sensitivityFilter, setSensitivityFilter] = useState<"all" | Entry["sensitivity"]>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | Entry["status"]>("all");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -84,7 +81,6 @@ export default function KnowledgeBaseEditor({
       body_md: p.body_md,
       structuredText: JSON.stringify(p.structured, null, 2),
       keywords: p.keywords.join(", "),
-      sensitivity: p.sensitivity,
       status: p.status,
       source: p.source ?? "",
     });
@@ -99,7 +95,6 @@ export default function KnowledgeBaseEditor({
       body_md: "",
       structuredText: "{}",
       keywords: "",
-      sensitivity: "none",
       status: "draft",
       source: "",
     });
@@ -119,7 +114,6 @@ export default function KnowledgeBaseEditor({
           body_md: draft.body_md,
           structured: draft.structuredText,
           keywords: draft.keywords,
-          sensitivity: draft.sensitivity,
           status: draft.status,
           source: draft.source,
           updated_by: operatorName || "Operator",
@@ -214,12 +208,6 @@ export default function KnowledgeBaseEditor({
               />
             )}
           </Field>
-          <Field label="Sensitivity">
-            <select className={inputCls} value={draft.sensitivity} onChange={(e) => setDraft({ ...draft, sensitivity: e.target.value as "none" | "sensitive" })}>
-              <option value="none">none</option>
-              <option value="sensitive">sensitive</option>
-            </select>
-          </Field>
           <Field label="Status">
             <select className={inputCls} value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as Draft["status"] })}>
               <option value="published">published</option>
@@ -304,10 +292,9 @@ export default function KnowledgeBaseEditor({
   const filtered = entries.filter(
     (e) =>
       (categoryFilter === "all" || e.intent === categoryFilter) &&
-      (sensitivityFilter === "all" || e.sensitivity === sensitivityFilter) &&
       (statusFilter === "all" || e.status === statusFilter),
   );
-  const filtering = categoryFilter !== "all" || sensitivityFilter !== "all" || statusFilter !== "all";
+  const filtering = categoryFilter !== "all" || statusFilter !== "all";
 
   return (
     <div className="flex flex-col gap-4">
@@ -330,15 +317,6 @@ export default function KnowledgeBaseEditor({
           ))}
         </FilterSelect>
         <FilterSelect
-          label="Sensitivity"
-          value={sensitivityFilter}
-          onChange={(v) => setSensitivityFilter(v as "all" | Entry["sensitivity"])}
-        >
-          <option value="all">Any sensitivity</option>
-          <option value="none">none</option>
-          <option value="sensitive">sensitive</option>
-        </FilterSelect>
-        <FilterSelect
           label="Status"
           value={statusFilter}
           onChange={(v) => setStatusFilter(v as "all" | Entry["status"])}
@@ -352,7 +330,6 @@ export default function KnowledgeBaseEditor({
           <button
             onClick={() => {
               setCategoryFilter("all");
-              setSensitivityFilter("all");
               setStatusFilter("all");
             }}
             className="self-end rounded-lg px-2 py-1.5 text-xs text-muted hover:text-foreground"
@@ -385,7 +362,6 @@ export default function KnowledgeBaseEditor({
                   <span className="truncate">{p.title}</span>
                   <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs">
                     {p.origin === "captured" && <span className="text-brand-strong">✎ captured</span>}
-                    {p.sensitivity === "sensitive" && <span className="text-amber-600">sensitive</span>}
                     <span className={p.status === "published" ? "text-foreground" : "text-muted"}>
                       {STATUS_LABEL[p.status]}
                     </span>

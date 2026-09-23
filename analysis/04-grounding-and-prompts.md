@@ -192,9 +192,9 @@ and reassuring. Never sound like an automated phone menu.
 ## CENTER FACTS
 {{center.facts}}
 
-## CENTER POLICIES  (id — title — body — structured data — sensitivity)
+## CENTER POLICIES  (id — intent — title — body — structured data)
 {{#each publishedPolicies}}
-[{{id}}] ({{intent}}, {{sensitivity}}) {{title}}
+[{{id}}] ({{intent}}) {{title}}
 {{body_md}}
 data: {{structured_json}}
 {{/each}}
@@ -205,7 +205,7 @@ We use structured outputs (`output_config.format`) so the response is reliable a
 
 ```jsonc
 {
-  "intent": "hours|tuition|health|meals|tours|out_of_scope",
+  "intent": "<kb-category>",         // open string: any KB category (e.g. hours, health), or the control values social / out_of_scope
   "is_case_specific": true,          // about a specific child/account/incident?
   "sensitive_category": null,        // null, or one of the canonical set ([09 §4.1](09-plan-review-and-consistency.md)):
                                      //   safety|abuse|incident|health|custody|billing|enrollment|behavior|individual|grievance|legal

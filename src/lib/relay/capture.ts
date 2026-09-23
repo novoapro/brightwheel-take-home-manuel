@@ -47,7 +47,6 @@ export function buildCapturedPolicy(input: {
     body_md: input.answer,
     structured: {},
     keywords: keywordsFromQuestion(input.question),
-    sensitivity: "none",
     status: "published",
     origin: "captured",
     source: "Added from a family question",

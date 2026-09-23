@@ -195,7 +195,6 @@ export const ENTRIES: KnowledgeEntryInput[] = [
       ],
     },
     keywords: ["sick", "fever", "100.4", "keep home", "stay home", "vomit", "diarrhea", "pink eye", "cough", "rash", "illness"],
-    sensitivity: "sensitive",
     source: "Family Handbook p.12",
   },
   {
@@ -212,7 +211,6 @@ export const ENTRIES: KnowledgeEntryInput[] = [
       hospital_return: "medical_release_required",
     },
     keywords: ["return", "come back", "fever free", "24 hours", "doctor note", "medical release", "after sick", "hospital"],
-    sensitivity: "sensitive",
     source: "Family Handbook p.13",
   },
   {
@@ -226,7 +224,6 @@ export const ENTRIES: KnowledgeEntryInput[] = [
       reportable_to_state: true,
     },
     keywords: ["contagious", "report", "outbreak", "notify", "communicable", "health department"],
-    sensitivity: "sensitive",
     source: "Family Handbook p.13",
   },
   {
@@ -243,7 +240,6 @@ export const ENTRIES: KnowledgeEntryInput[] = [
       otc_allowed: ["Tylenol", "sunscreen", "diaper cream"],
     },
     keywords: ["medication", "medicine", "tylenol", "permission", "dosage", "cough drops", "sunscreen", "administer"],
-    sensitivity: "sensitive",
     source: "Family Handbook p.14",
   },
   {
@@ -258,7 +254,6 @@ export const ENTRIES: KnowledgeEntryInput[] = [
       state: "NM",
     },
     keywords: ["immunization", "vaccine", "shots", "exemption", "records", "required"],
-    sensitivity: "sensitive",
     source: "Family Handbook p.15",
   },
 

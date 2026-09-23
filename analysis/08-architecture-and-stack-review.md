@@ -105,8 +105,25 @@ This is the reconsideration worth the most attention, because it directly serves
 | Alignment w/ our guidance | Matches the `claude-api` skill (official SDK) | A legit provider-agnostic layer (not an OpenAI shim), widely used |
 
 **Analysis:** our plan's "provider-agnostic interface with two impls" is *exactly what the Vercel AI SDK is*. Adopting it would **delete the adapter/schema-mapping code**, make the Gemini toggle a one-liner, and unify structured output + streaming — a direct hit on "less-is-more" and the A/B goal. The one thing to confirm is that **Anthropic prompt caching** (our latency/cost lever for the cached policy prefix) is cleanly reachable via `providerOptions.anthropic` — if yes, the AI SDK is the stronger choice; if caching control is too coarse, keep the official SDKs for the Claude answerer and use the AI SDK only for the Gemini toggle.
-- **Not chosen either way:** *LangChain/LlamaIndex* — full agent/RAG frameworks; far more than a grounded FAQ over 20 records needs.
+
 **DECISION: hand-rolled over the official SDKs.** Full control of Anthropic prompt caching and provider features won over the AI SDK's convenience — and our seam is little code (two `groundedAnswer` adapters + schema mapping). Our **`decide()` wrapper, prompts, and golden eval stay provider-neutral on top**. Revisit the AI SDK only if maintaining two adapters proves annoying.
+
+### 5.1 Why not LangChain (or LlamaIndex)?
+
+The natural follow-up to "you hand-rolled a provider seam — wouldn't a framework do this for you?" LangChain is the usual candidate, so it's worth stating the trade-off explicitly rather than dismissing it in a clause.
+
+| | **Hand-rolled `FrontDeskModel` seam** (chosen) | **LangChain as the model layer** |
+|---|---|---|
+| Surface it abstracts | Two methods — `groundedAnswer`, `judgeGroundedness` ([04 §6](04-grounding-and-prompts.md)) | Chains, agents, retrievers, memory, output parsers — most unused here |
+| The actually-hard parts | Owned and visible: `cache_control` on the policy prefix, `thinking`/`effort`, Gemini's nullable-enum (`null`→`"none"`) + `propertyOrdering` remap | Still provider-specific *underneath* the abstraction — `withStructuredOutput` unifies the call, not these quirks; cache-breakpoint support lags the official SDK |
+| Prompt caching | Direct, exact — our biggest cost lever (all published policies sit in the cached prefix) | Fiddly to place a cache breakpoint through the wrapper; risks losing the optimization we already have |
+| Dependency weight | Two official SDKs + a ~300-line owned seam | Large, fast-churning transitive dep tree for a two-call surface |
+| Testing | Injectable `client`/`ai` → clean DI, matches our testing convention | Extra wrapping layer to mock around |
+| Review / craft signal | A reviewer reads the whole seam top-to-bottom in minutes; minimal surface (repo will be AI-reviewed) | Framework indirection to trace; more to trust |
+
+**Analysis:** LangChain earns its weight when you compose **retrieval + chains + agents + memory** together — none of which we have. We deliberately run **no embeddings, structured grounding only** (§3.5, [01](01-data-and-knowledge-model.md)), and the entire LLM surface is **two calls**. The "deep per-provider detail" that prompted the question — prompt caching, adaptive thinking, structured-output schema quirks — is precisely what a generic framework *can't* fully hide: you'd add an indirection layer **and** still hand-write the provider config beneath it. Net for a timeboxed, craft-evaluated PoC: more dependency, same hard parts, less control.
+
+**DECISION: not LangChain/LlamaIndex.** Full agent/RAG frameworks are far more than a grounded FAQ over ~20 records needs, and they'd obscure (not remove) the provider-specific tuning that is the point of owning the seam. If we ever want to *reduce* hand-rolling, the honest candidate is the **Vercel AI SDK** (§5), not LangChain.
 
 ---
 

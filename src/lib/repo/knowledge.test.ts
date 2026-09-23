@@ -41,7 +41,6 @@ describe("knowledge repo", () => {
 
   it("applies defaults for optional fields", () => {
     const p = upsertEntry(db, base);
-    expect(p.sensitivity).toBe("none");
     expect(p.status).toBe("published");
     expect(p.origin).toBe("seed");
     expect(p.version).toBe(1);
@@ -54,13 +53,11 @@ describe("knowledge repo", () => {
       ...base,
       id: "health.x",
       intent: "health",
-      sensitivity: "sensitive",
       status: "draft",
       origin: "captured",
       source: "Handbook p.12",
       effective_from: "2026-01-01",
     });
-    expect(p.sensitivity).toBe("sensitive");
     expect(p.status).toBe("draft");
     expect(p.origin).toBe("captured");
     expect(p.source).toBe("Handbook p.12");

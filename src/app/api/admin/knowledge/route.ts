@@ -11,7 +11,6 @@ import {
 import {
   type Intent,
   type KnowledgeEntryInput,
-  type KnowledgeEntrySensitivity,
   type KnowledgeEntryStatus,
 } from "@/lib/types";
 
@@ -74,8 +73,6 @@ function parseEntryBody(
       ? body.keywords.split(",").map((k) => k.trim()).filter(Boolean)
       : [];
 
-  const sensitivity: KnowledgeEntrySensitivity =
-    body.sensitivity === "sensitive" ? "sensitive" : "none";
   const status: KnowledgeEntryStatus =
     body.status === "draft" || body.status === "unpublished"
       ? body.status
@@ -88,7 +85,6 @@ function parseEntryBody(
       body_md,
       structured,
       keywords,
-      sensitivity,
       status,
       source: typeof body.source === "string" ? body.source : null,
       updated_by: typeof body.updated_by === "string" ? body.updated_by : "Operator",

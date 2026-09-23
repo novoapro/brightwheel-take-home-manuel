@@ -36,7 +36,7 @@ Each row is a candidate `KnowledgeEntry` (per [01 §2.2](01-data-and-knowledge-m
 | `tuition.payment` | Paid **in advance**, **non-refundable**, no pro-rating; pay online; late-pickup fee added to bill | `due:"weekly_in_advance"`, `refundable:false` | keep, simplified |
 | `tuition.billing_disputes` | (implicit) | — | **Sensitive → escalation**, never auto-answer a dispute (see §3) |
 
-### 2.3 HEALTH & SICK-CHILD  (`intent: health`, `sensitivity: sensitive`)
+### 2.3 HEALTH & SICK-CHILD  (`intent: health`)
 The richest deterministic + escalation surface. Grounded exclusion criteria:
 | Candidate record | Grounded fact | Structured payload |
 |---|---|---|

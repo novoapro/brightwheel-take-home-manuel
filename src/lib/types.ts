@@ -57,7 +57,6 @@ export const HARD_SENSITIVE: readonly SensitiveCategory[] = [
   "legal",
 ];
 
-export type KnowledgeEntrySensitivity = "none" | "sensitive";
 /**
  * published — served to parents (in the grounding prefix).
  * draft      — a work in progress, not yet served.
@@ -76,7 +75,6 @@ export interface KnowledgeEntry {
   structured: Record<string, unknown>;
   /** Terms for BM25 / exact-match citation anchoring. */
   keywords: string[];
-  sensitivity: KnowledgeEntrySensitivity;
   effective_from: string | null;
   effective_to: string | null;
   /** Shown in the attribution chip, e.g. "Family Handbook p.4". */
@@ -96,7 +94,6 @@ export interface KnowledgeEntryInput {
   body_md: string;
   structured: Record<string, unknown>;
   keywords: string[];
-  sensitivity?: KnowledgeEntrySensitivity;
   effective_from?: string | null;
   effective_to?: string | null;
   source?: string | null;

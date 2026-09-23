@@ -19,7 +19,7 @@ import type { Database } from "better-sqlite3";
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
  */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
   body_md        TEXT NOT NULL,
   structured     TEXT NOT NULL DEFAULT '{}',   -- JSON object
   keywords       TEXT NOT NULL DEFAULT '[]',   -- JSON array
-  sensitivity    TEXT NOT NULL DEFAULT 'none' CHECK (sensitivity IN ('none','sensitive')),
   effective_from TEXT,
   effective_to   TEXT,
   source         TEXT,
@@ -266,11 +265,11 @@ function migrateLegacyPolicies(db: Database): void {
     db.transaction(() => {
       db.exec(`
         INSERT OR IGNORE INTO knowledge_entries
-          (id, intent, title, body_md, structured, keywords, sensitivity,
+          (id, intent, title, body_md, structured, keywords,
            effective_from, effective_to, source, status, origin, version,
            updated_by, updated_at, embedding)
         SELECT
-           id, intent, title, body_md, structured, keywords, sensitivity,
+           id, intent, title, body_md, structured, keywords,
            effective_from, effective_to, source, status, origin, version,
            updated_by, updated_at, embedding
         FROM policies;

@@ -57,7 +57,6 @@ KnowledgeEntry {
                      //   tuition: [{group:"infant", monthly:1650, ...}]
                      //   illness: {fever_f:100.4, return_rule:"24h fever-free"}
   keywords           // for BM25 / exact-match anchoring
-  sensitivity        // none | sensitive  (drives escalation, per §00 §6)
   effective_from/to  // time-awareness ("open on Veterans Day?")
   source             // "Family Handbook p.4" — shown in attribution
   status             // published | draft | unpublished

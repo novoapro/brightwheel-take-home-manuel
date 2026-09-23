@@ -4,7 +4,7 @@ import { createMemoryDb } from "../db";
 import { getCenter } from "../repo/center";
 import { countEntries, getEntry, listEntries } from "../repo/knowledge";
 import { getSettings } from "../repo/settings";
-import { INTENTS, SENSITIVE_INTENTS } from "../types";
+import { INTENTS } from "../types";
 import { seedDatabase } from "./index";
 import { ENTRIES } from "./data";
 
@@ -51,21 +51,6 @@ describe("seedDatabase", () => {
     seedDatabase(db);
     for (const intent of INTENTS) {
       expect(listEntries(db, { intent }).length).toBeGreaterThan(0);
-    }
-  });
-
-  it("flags exactly the health policies as sensitive, and nothing else", () => {
-    seedDatabase(db);
-    const sensitive = listEntries(db, {}).filter(
-      (p) => p.sensitivity === "sensitive",
-    );
-    expect(sensitive.length).toBeGreaterThan(0);
-    for (const p of sensitive) {
-      expect(SENSITIVE_INTENTS).toContain(p.intent);
-    }
-    // and every health policy is marked sensitive
-    for (const p of listEntries(db, { intent: "health" })) {
-      expect(p.sensitivity).toBe("sensitive");
     }
   });
 

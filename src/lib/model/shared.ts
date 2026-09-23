@@ -14,7 +14,13 @@ import type { JudgeInput } from "./types";
 
 /** Structured answerer output (analysis/04 §4.2). */
 export const GroundedResultSchema = z.object({
-  intent: z.enum(["hours", "tuition", "health", "meals", "tours", "social", "out_of_scope"]),
+  // Open-ended topic label: any lowercase category the operator has in the KB
+  // (`type Intent = string`), plus the two control values the wrapper routes on —
+  // `social` (greeting lane) and `out_of_scope` (relay). Kept a free string so an
+  // operator-added category isn't forced into a fixed enum; it's advisory metadata
+  // (decide() only special-cases `social`/`out_of_scope`, and sensitivity is driven
+  // by `sensitive_category`, not this field).
+  intent: z.string(),
   is_case_specific: z.boolean(),
   sensitive_category: z.enum(SENSITIVE_CATEGORIES).nullable(),
   grounding_confidence: z.number().min(0).max(1),

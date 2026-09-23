@@ -22,7 +22,6 @@ type EntryRow = {
   body_md: string;
   structured: string;
   keywords: string;
-  sensitivity: "none" | "sensitive";
   effective_from: string | null;
   effective_to: string | null;
   source: string | null;
@@ -41,7 +40,6 @@ function rowToRecord(row: EntryRow): KnowledgeEntry {
     body_md: row.body_md,
     structured: JSON.parse(row.structured) as Record<string, unknown>,
     keywords: JSON.parse(row.keywords) as string[],
-    sensitivity: row.sensitivity,
     effective_from: row.effective_from,
     effective_to: row.effective_to,
     source: row.source,
@@ -66,11 +64,11 @@ export function upsertEntry(db: Database, input: KnowledgeEntryInput): Knowledge
 
   db.prepare(
     `INSERT INTO knowledge_entries
-       (id, intent, title, body_md, structured, keywords, sensitivity,
+       (id, intent, title, body_md, structured, keywords,
         effective_from, effective_to, source, status, origin, version,
         updated_by, updated_at)
      VALUES
-       (@id, @intent, @title, @body_md, @structured, @keywords, @sensitivity,
+       (@id, @intent, @title, @body_md, @structured, @keywords,
         @effective_from, @effective_to, @source, @status, @origin, @version,
         @updated_by, @updated_at)
      ON CONFLICT(id) DO UPDATE SET
@@ -79,7 +77,6 @@ export function upsertEntry(db: Database, input: KnowledgeEntryInput): Knowledge
         body_md = excluded.body_md,
         structured = excluded.structured,
         keywords = excluded.keywords,
-        sensitivity = excluded.sensitivity,
         effective_from = excluded.effective_from,
         effective_to = excluded.effective_to,
         source = excluded.source,
@@ -95,7 +92,6 @@ export function upsertEntry(db: Database, input: KnowledgeEntryInput): Knowledge
     body_md: input.body_md,
     structured: JSON.stringify(input.structured),
     keywords: JSON.stringify(input.keywords),
-    sensitivity: input.sensitivity ?? "none",
     effective_from: input.effective_from ?? null,
     effective_to: input.effective_to ?? null,
     source: input.source ?? null,
