@@ -5,14 +5,21 @@ import { seedDatabase } from "../seed";
 import { handleTurn } from "../conversation";
 import { buildSystemPrefix } from "../model/prompt";
 import { getCenter } from "../repo/center";
-import { getEscalation, setEscalationContact } from "../repo/escalations";
+import {
+  dismissEscalation,
+  getEscalation,
+  setEscalationContact,
+} from "../repo/escalations";
 import { updateSettings } from "../repo/settings";
+import { createConversation } from "../repo/conversations";
+import { closeSession, createParentSession } from "../repo/sessions";
 import { getPolicy, listPublishedPolicies } from "../repo/policies";
 import { listMessages } from "../repo/messages";
 import { isAdmin } from "../admin";
-import { getRelayBus, type StaffMessageEvent } from "./bus";
-import { answerRelay } from "./answer";
+import { getRelayBus, type QueueChangedEvent, type StaffMessageEvent } from "./bus";
+import { answerRelay, sendRelayMessage } from "./answer";
 import { buildRelayQueue } from "./queue";
+import { buildRelayThread } from "./thread";
 import { buildCapturedPolicy, captureDefaultFor, keywordsFromQuestion } from "./capture";
 import type {
   FrontDeskModel,
@@ -168,6 +175,209 @@ describe("answerRelay — the live relay loop", () => {
     expect(() =>
       answerRelay(db, { escalationId: turn.message.escalationId!, answer: "again", answeredBy: "M" }),
     ).toThrow(/already/i);
+  });
+});
+
+describe("sendRelayMessage — mid-relay context gathering", () => {
+  it("appends a staff message and streams live WITHOUT resolving the escalation", async () => {
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    const escId = turn.message.escalationId!;
+
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
+
+    sendRelayMessage(db, {
+      escalationId: escId,
+      text: "Happy to help — which classroom is your child in?",
+      answeredBy: "Maria",
+    });
+    off();
+
+    // streamed to the parent
+    expect(received).toHaveLength(1);
+    expect(received[0].message.text).toMatch(/which classroom/i);
+
+    // persisted as staff provenance, but the escalation is STILL waiting
+    const staff = listMessages(db, turn.conversationId).filter((m) => m.provenance === "staff");
+    expect(staff).toHaveLength(1);
+    expect(getEscalation(db, escId)!.status).toBe("waiting");
+    expect(buildRelayQueue(db).some((q) => q.escalationId === escId)).toBe(true);
+  });
+
+  it("rejects an unknown or already-handled escalation", async () => {
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    expect(() =>
+      sendRelayMessage(db, { escalationId: "ghost", text: "hi", answeredBy: "M" }),
+    ).toThrow(/not found/i);
+    answerRelay(db, { escalationId: turn.message.escalationId!, answer: "done", answeredBy: "M" });
+    expect(() =>
+      sendRelayMessage(db, { escalationId: turn.message.escalationId!, text: "more", answeredBy: "M" }),
+    ).toThrow(/already/i);
+  });
+});
+
+describe("queue_changed broadcast — the live nav badge (SSE, no polling)", () => {
+  it("pushes the fresh waiting count on relay, answer, and dismiss", async () => {
+    const counts: number[] = [];
+    const off = getRelayBus().subscribeQueue((e: QueueChangedEvent) => counts.push(e.waiting));
+
+    const a = await relayTurn(new FakeModel(outOfScope())); // → 1 waiting
+    const b = await relayTurn(new FakeModel(outOfScope())); // → 2 waiting
+    answerRelay(db, { escalationId: a.message.escalationId!, answer: "done", answeredBy: "M" }); // → 1
+    dismissEscalation(db, b.message.escalationId!);
+    // dismissEscalation is a pure repo write; the route publishes. Mirror that:
+    const { publishQueueCount } = await import("./queue");
+    publishQueueCount(db); // → 0
+    off();
+
+    expect(counts).toEqual([1, 2, 1, 0]);
+  });
+
+  it("stops delivering after unsubscribe", async () => {
+    const counts: number[] = [];
+    const off = getRelayBus().subscribeQueue((e) => counts.push(e.waiting));
+    await relayTurn(new FakeModel(outOfScope()));
+    expect(counts).toEqual([1]);
+    off();
+    await relayTurn(new FakeModel(outOfScope()));
+    expect(counts).toEqual([1]); // no further delivery
+  });
+});
+
+describe("dismissEscalation — 'session no longer active'", () => {
+  it("drops a waiting escalation from the queue without an answer", async () => {
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    const escId = turn.message.escalationId!;
+
+    expect(dismissEscalation(db, escId)).toBe(true);
+    expect(getEscalation(db, escId)!.status).toBe("dismissed");
+    expect(buildRelayQueue(db).some((q) => q.escalationId === escId)).toBe(false);
+
+    // idempotent — a non-waiting escalation is a no-op
+    expect(dismissEscalation(db, escId)).toBe(false);
+  });
+});
+
+describe("buildRelayThread — the operator's context view", () => {
+  it("transcribes the whole conversation and surfaces AI references", async () => {
+    const turn = await relayTurn(new FakeModel(caseSpecific()));
+    const thread = buildRelayThread(db, turn.message.escalationId!)!;
+
+    expect(thread.status).toBe("waiting");
+    expect(thread.isCaseSpecific).toBe(true);
+    expect(thread.aiReferenced).toContain("When to Keep Your Child Home");
+
+    // the parent's question and the AI hand-off are both in the transcript
+    const parent = thread.messages.find((m) => m.role === "parent");
+    expect(parent?.text).toMatch(/part-time/i);
+    expect(thread.messages.some((m) => m.role === "frontdesk")).toBe(true);
+  });
+
+  it("shows staff replies added during the relay", async () => {
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    sendRelayMessage(db, {
+      escalationId: turn.message.escalationId!,
+      text: "Which days were you thinking?",
+      answeredBy: "Maria",
+    });
+    const thread = buildRelayThread(db, turn.message.escalationId!)!;
+    const staff = thread.messages.find((m) => m.provenance === "staff");
+    expect(staff?.text).toMatch(/which days/i);
+    expect(staff?.answeredBy).toBeNull(); // not resolved yet, so no answered_by
+  });
+
+  it("returns null for an unknown escalation", () => {
+    expect(buildRelayThread(db, "ghost")).toBeNull();
+  });
+});
+
+describe("parent left the session — collect knowledge instead of posting", () => {
+  /** Run a relayed turn under a real, persisted parent session we can close. */
+  async function relayWithSession(sessionId: string, conversationId: string) {
+    createConversation(db, { id: conversationId, session_id: sessionId, active_provider: "anthropic" });
+    createParentSession(db, { id: sessionId, name: "Sam", email: "sam@example.com", conversation_id: conversationId });
+    return handleTurn(db, {
+      question: "Do you offer part-time schedules?",
+      model: new FakeModel(outOfScope()),
+      sessionId,
+      conversationId,
+    });
+  }
+
+  it("answers → saves to knowledge, streams nothing, still resolves", async () => {
+    const turn = await relayWithSession("s1", "c1");
+    const escId = turn.message.escalationId!;
+    closeSession(db, "s1", "parent"); // the parent leaves
+
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
+    const res = answerRelay(db, {
+      escalationId: escId,
+      answer: "Yes — up to 3 half-days a week.",
+      answeredBy: "Maria",
+    });
+    off();
+
+    expect(res.posted).toBe(false);
+    expect(res.collectedKnowledge).toBe(true);
+    expect(res.promotedPolicyId).toBeTruthy(); // collected as knowledge
+    expect(received).toHaveLength(0); // nothing streamed to the gone parent
+    expect(listMessages(db, "c1").some((m) => m.provenance === "staff")).toBe(false);
+    expect(getEscalation(db, escId)!.status).toBe("answered"); // still resolved
+  });
+
+  it("still posts live when the parent is present", async () => {
+    const turn = await relayWithSession("s2", "c2");
+    const res = answerRelay(db, {
+      escalationId: turn.message.escalationId!,
+      answer: "Yes — up to 3 half-days a week.",
+      answeredBy: "Maria",
+    });
+    expect(res.posted).toBe(true);
+    expect(listMessages(db, "c2").some((m) => m.provenance === "staff")).toBe(true);
+  });
+
+  it("refuses a mid-relay context message once the parent has left", async () => {
+    const turn = await relayWithSession("s3", "c3");
+    closeSession(db, "s3", "parent");
+    expect(() =>
+      sendRelayMessage(db, { escalationId: turn.message.escalationId!, text: "Which days?", answeredBy: "M" }),
+    ).toThrow(/left/i);
+  });
+
+  it("does not save a case-specific relay as general knowledge", async () => {
+    createConversation(db, { id: "c5", session_id: "s5", active_provider: "anthropic" });
+    createParentSession(db, { id: "s5", name: "Sam", email: "sam@example.com", conversation_id: "c5" });
+    const cs = await handleTurn(db, {
+      question: "My child has a fever, can she come?",
+      model: new FakeModel(caseSpecific()),
+      sessionId: "s5",
+      conversationId: "c5",
+    });
+    closeSession(db, "s5", "parent");
+
+    const res = answerRelay(db, {
+      escalationId: cs.message.escalationId!,
+      answer: "Please keep her home 24h after the fever breaks.",
+      answeredBy: "Maria",
+    });
+    expect(res.posted).toBe(false);
+    expect(res.collectedKnowledge).toBe(false); // a specific case is never general knowledge
+    expect(res.promotedPolicyId).toBeNull();
+    expect(getEscalation(db, cs.message.escalationId!)!.status).toBe("answered");
+  });
+
+  it("reports parentPresent=false on the thread and queue after leaving", async () => {
+    const turn = await relayWithSession("s6", "c6");
+    const escId = turn.message.escalationId!;
+    expect(buildRelayThread(db, escId)!.parentPresent).toBe(true);
+    closeSession(db, "s6", "parent");
+    expect(buildRelayThread(db, escId)!.parentPresent).toBe(false);
+    expect(buildRelayQueue(db).find((q) => q.escalationId === escId)!.parentPresent).toBe(false);
   });
 });
 

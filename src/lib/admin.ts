@@ -5,9 +5,17 @@
  * dev). Real auth (sessions, RBAC) is the production follow-up.
  */
 export function isAdmin(request: Request): boolean {
+  return isAdminPasscode(request.headers.get("x-admin-passcode"));
+}
+
+/**
+ * Compare a raw passcode value against ADMIN_PASSCODE. Used by SSE routes, where
+ * the passcode must ride in the query string because EventSource can't set
+ * headers (a demo-gate concession — the passcode is not a real secret).
+ */
+export function isAdminPasscode(provided: string | null | undefined): boolean {
   const expected = process.env.ADMIN_PASSCODE ?? "change-me";
-  const provided = request.headers.get("x-admin-passcode") ?? "";
-  return provided.length > 0 && provided === expected;
+  return !!provided && provided === expected;
 }
 
 /** Standard 401 body for admin routes. */

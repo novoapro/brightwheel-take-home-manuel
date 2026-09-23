@@ -44,12 +44,24 @@ export interface PresenceEvent {
   awayMessage: string;
 }
 
+/**
+ * The waiting-relay count changed (a parent was relayed, answered, or
+ * dismissed). Broadcast to the operator shell so the "Live relay" nav badge
+ * updates live from any tab — no polling (analysis/03 §4.2).
+ */
+export interface QueueChangedEvent {
+  type: "queue_changed";
+  waiting: number;
+}
+
 type Handler = (event: RelayEvent) => void;
 type PresenceHandler = (event: PresenceEvent) => void;
+type QueueHandler = (event: QueueChangedEvent) => void;
 
 class RelayBus {
   private subscribers = new Map<string, Set<Handler>>();
   private presenceHandlers = new Set<PresenceHandler>();
+  private queueHandlers = new Set<QueueHandler>();
 
   subscribe(conversationId: string, handler: Handler): () => void {
     let set = this.subscribers.get(conversationId);
@@ -105,6 +117,29 @@ class RelayBus {
   /** Number of live presence subscribers (used in tests). */
   presenceSubscriberCount(): number {
     return this.presenceHandlers.size;
+  }
+
+  /** Subscribe to waiting-relay count changes (the operator shell). */
+  subscribeQueue(handler: QueueHandler): () => void {
+    this.queueHandlers.add(handler);
+    return () => this.queueHandlers.delete(handler);
+  }
+
+  /** Broadcast a new waiting-relay count to every connected operator. */
+  publishQueue(event: QueueChangedEvent): number {
+    for (const handler of this.queueHandlers) {
+      try {
+        handler(event);
+      } catch {
+        /* a broken subscriber must not stop the others */
+      }
+    }
+    return this.queueHandlers.size;
+  }
+
+  /** Number of live queue subscribers (used in tests). */
+  queueSubscriberCount(): number {
+    return this.queueHandlers.size;
   }
 }
 

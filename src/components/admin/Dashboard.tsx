@@ -35,10 +35,14 @@ const pct = (r: number) => `${Math.round(r * 100)}%`;
 /** The owner's 10-second read (analysis/03 §4.1, analysis/05). Hero = hours saved. */
 export default function Dashboard({
   passcode,
+  liveWaiting,
   onOpenGaps,
   onOpenRelay,
 }: {
   passcode: string;
+  /** Live waiting-relay count from the shell's SSE stream; overrides the fetched
+   *  snapshot so the widget updates the instant a relay arrives — no refetch. */
+  liveWaiting?: number;
   onOpenGaps: () => void;
   onOpenRelay: () => void;
 }) {
@@ -73,7 +77,7 @@ export default function Dashboard({
         it leads. Deliberately NOT scoped by the date filter: an open escalation
         is a parent waiting right now, not a historical stat.
       */}
-      <OpenEscalations waiting={m?.waiting ?? 0} loading={!m} onOpenRelay={onOpenRelay} />
+      <OpenEscalations waiting={liveWaiting ?? m?.waiting ?? 0} loading={!m} onOpenRelay={onOpenRelay} />
 
       {/* Date-range quick filter — scopes everything below. */}
       <div className="flex items-center gap-2">
@@ -106,9 +110,9 @@ export default function Dashboard({
             <p className="mt-1 text-4xl font-bold">{m.hoursSaved.toFixed(1)} hrs</p>
             <p className="text-sm opacity-90">saved at the front desk</p>
             <p className="mt-2 text-xs opacity-80">
-              {pct(m.containmentRate)} handled by the front desk · {pct(m.escalationRate)} to you
-              {" · "}~{m.avgHandleMinutes} min/inquiry
+              {pct(m.containmentRate)} handled by the front desk AI Assistant · {pct(m.escalationRate)} to you.
             </p>
+            <p className="mt-2 text-sm opacity-00">~ {m.avgHandleMinutes} min/inquiry</p>
           </div>
 
           {/* Trust */}

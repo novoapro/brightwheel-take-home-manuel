@@ -34,6 +34,18 @@ export function getParentSession(db: Database, id: string): ParentSession | null
   return row ?? null;
 }
 
+/**
+ * Has the parent left this session? A relay only reaches a parent who's still
+ * here — closed (ended it themselves / swept) or gone-stale means there's no
+ * live thread to answer into, so the operator's reply should be collected as
+ * knowledge instead. Unknown session (anonymous / not yet persisted) counts as
+ * present — we don't assume someone left without evidence.
+ */
+export function hasParentLeft(db: Database, sessionId: string): boolean {
+  const s = getParentSession(db, sessionId);
+  return !!s && (s.status === "closed" || isSessionStale(s));
+}
+
 export function createParentSession(
   db: Database,
   input: { id: string; name: string; email: string; conversation_id: string },

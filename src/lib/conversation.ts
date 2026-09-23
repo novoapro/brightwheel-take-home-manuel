@@ -10,6 +10,7 @@ import {
 import { createEscalation } from "./repo/escalations";
 import { appendMessage, listMessages } from "./repo/messages";
 import { getPolicy } from "./repo/policies";
+import { publishQueueCount } from "./relay/queue";
 import { resolveAvailability } from "./repo/settings";
 import type { EscalationDelivery } from "./types";
 
@@ -164,6 +165,10 @@ export async function handleTurn(
     });
   });
   commit();
+
+  // A new waiting relay changed the queue — push the fresh count to the operator
+  // shell so the nav badge lights up live (no polling). After commit only.
+  if (decision.decision === "relayed") publishQueueCount(db);
 
   return {
     conversationId,

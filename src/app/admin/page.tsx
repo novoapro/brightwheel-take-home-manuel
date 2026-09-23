@@ -102,6 +102,10 @@ export default function AdminPage() {
   const [offlineAt, setOfflineAt] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [tab, setTab] = useState<Tab>("dashboard");
+  // Waiting-relay count over SSE, shell-wide so the "Live relay" nav item badges
+  // a brand-new escalation from any tab — and the dashboard widget updates live —
+  // with no refetch (analysis/03 §4.2). Undefined until the first event arrives.
+  const [waitingCount, setWaitingCount] = useState<number>();
   // Start closed so mobile never flashes the overlay open before the mount
   // effect resolves the saved preference / breakpoint.
   const [collapsed, setCollapsed] = useState(true);
@@ -151,6 +155,26 @@ export default function AdminPage() {
         setOfflineAt(d.settings.offline_at ?? null);
       })
       .catch(() => {});
+  }, [authCode]);
+
+  // Subscribe to the waiting-relay count over SSE while signed in — regardless
+  // of the open tab — so a brand-new live relay lights up the nav badge the
+  // instant it's created, with no polling. The stream sends a snapshot on
+  // connect and a `queue_changed` event on every relay/answer/dismiss, and
+  // EventSource auto-reconnects if the connection drops.
+  useEffect(() => {
+    if (!authCode) return;
+    const es = new EventSource(
+      `/api/admin/relay/stream?passcode=${encodeURIComponent(authCode)}`,
+    );
+    es.addEventListener("queue_changed", (e) => {
+      try {
+        setWaitingCount(JSON.parse((e as MessageEvent).data).waiting ?? 0);
+      } catch {
+        /* ignore a malformed frame */
+      }
+    });
+    return () => es.close();
   }, [authCode]);
 
   // Persist a presence change (name / availability / auto-offline). Returns the
@@ -283,8 +307,35 @@ export default function AdminPage() {
                   : "text-muted hover:bg-you"
               }`}
             >
-              <NavIcon name={n.id} />
-              {!collapsed && <span className="truncate">{n.label}</span>}
+              {(() => {
+                const badge = n.id === "relay" ? waitingCount ?? 0 : 0;
+                return (
+                  <>
+                    <span className="relative flex shrink-0">
+                      <NavIcon name={n.id} />
+                      {/* Collapsed rail: a dot-badge floats over the icon. */}
+                      {collapsed && badge > 0 && (
+                        <span
+                          aria-label={`${badge} waiting`}
+                          className="absolute -right-2 -top-2 grid h-4 min-w-4 animate-softpulse place-items-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-surface"
+                        >
+                          {badge > 9 ? "9+" : badge}
+                        </span>
+                      )}
+                    </span>
+                    {!collapsed && <span className="truncate">{n.label}</span>}
+                    {/* Expanded rail: a count pill at the row's end. */}
+                    {!collapsed && badge > 0 && (
+                      <span
+                        aria-label={`${badge} waiting`}
+                        className="ml-auto grid h-5 min-w-5 animate-softpulse place-items-center rounded-full bg-red-600 px-1.5 text-xs font-semibold leading-none text-white"
+                      >
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </button>
           ))}
         </nav>
@@ -326,6 +377,7 @@ export default function AdminPage() {
             {tab === "dashboard" && (
               <Dashboard
                 passcode={authCode}
+                liveWaiting={waitingCount}
                 onOpenGaps={() => setTab("handbook")}
                 onOpenRelay={() => setTab("relay")}
               />

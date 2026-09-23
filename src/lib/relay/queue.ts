@@ -1,9 +1,11 @@
 import type { Database } from "better-sqlite3";
-import { getAudit } from "../repo/audit";
+import { getAudit, getAuditContext } from "../repo/audit";
 import { listWaitingEscalations } from "../repo/escalations";
 import { getPolicy } from "../repo/policies";
+import { hasParentLeft } from "../repo/sessions";
 import type { DetectedIntent, EscalationDelivery } from "../types";
 import { captureDefaultFor } from "./capture";
+import { getRelayBus } from "./bus";
 
 /**
  * The live-relay queue an operator sees (analysis/03 §4.2): each waiting parent,
@@ -24,6 +26,20 @@ export interface QueueItem {
   delivery: EscalationDelivery;
   contactName: string | null;
   contactEmail: string | null;
+  /** False once the parent has left a live relay — replies collect as knowledge. */
+  parentPresent: boolean;
+}
+
+/**
+ * Broadcast the current waiting-relay count to every connected operator shell.
+ * Call after any change to the queue (a new relay, an answer, a dismissal) so
+ * the nav badge updates live over SSE without polling.
+ */
+export function publishQueueCount(db: Database): void {
+  getRelayBus().publishQueue({
+    type: "queue_changed",
+    waiting: listWaitingEscalations(db).length,
+  });
 }
 
 export function buildRelayQueue(db: Database): QueueItem[] {
@@ -33,6 +49,7 @@ export function buildRelayQueue(db: Database): QueueItem[] {
       const p = getPolicy(db, id);
       return p ? [p.title] : [];
     });
+    const ctx = esc.interaction_id ? getAuditContext(db, esc.interaction_id) : null;
     return {
       escalationId: esc.id,
       question: esc.question,
@@ -45,6 +62,7 @@ export function buildRelayQueue(db: Database): QueueItem[] {
       delivery: esc.delivery,
       contactName: esc.contact_name,
       contactEmail: esc.contact_email,
+      parentPresent: esc.delivery === "live" && ctx ? !hasParentLeft(db, ctx.session_id) : false,
     };
   });
 }

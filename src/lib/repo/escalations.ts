@@ -90,6 +90,20 @@ export function listAllEscalations(db: Database): Escalation[] {
     .all() as Escalation[];
 }
 
+/**
+ * Dismiss a waiting escalation the operator judges no longer actionable — the
+ * parent left, the thread went stale, or it's a duplicate. It drops out of the
+ * live-relay queue without an answer being relayed. No-op unless still waiting.
+ */
+export function dismissEscalation(db: Database, id: string): boolean {
+  const res = db
+    .prepare(
+      `UPDATE escalations SET status = 'dismissed' WHERE id = @id AND status = 'waiting'`,
+    )
+    .run({ id });
+  return res.changes > 0;
+}
+
 /** Mark an escalation answered (and, on capture, link the promoted policy). */
 export function answerEscalation(
   db: Database,
