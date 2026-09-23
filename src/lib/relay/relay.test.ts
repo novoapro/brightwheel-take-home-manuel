@@ -17,7 +17,7 @@ import { getEntry, listPublishedEntries } from "../repo/knowledge";
 import { listMessages } from "../repo/messages";
 import { isAdmin } from "../admin";
 import { getRelayBus, type QueueChangedEvent, type StaffMessageEvent } from "./bus";
-import { answerRelay, sendRelayMessage } from "./answer";
+import { answerSession, dismissSession, sendRelayMessage } from "./answer";
 import { buildRelayQueue } from "./queue";
 import { buildRelayThread } from "./thread";
 import { buildCapturedPolicy, captureDefaultFor, keywordsFromQuestion } from "./capture";
@@ -103,7 +103,7 @@ describe("capture helpers", () => {
   });
 });
 
-describe("answerRelay — the live relay loop", () => {
+describe("answerSession — the live relay loop (single question)", () => {
   it("appends a staff message, closes the escalation, and publishes live", async () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
     const escId = turn.message.escalationId!;
@@ -113,7 +113,7 @@ describe("answerRelay — the live relay loop", () => {
       if (e.type === "staff_message") received.push(e);
     });
 
-    const res = answerRelay(db, {
+    const res = answerSession(db, {
       escalationId: escId,
       answer: "Yes — we offer up to 3 half-days a week.",
       answeredBy: "Maria",
@@ -132,7 +132,7 @@ describe("answerRelay — the live relay loop", () => {
     expect(staff?.text).toContain("half-days");
     expect(staff?.escalation_id).toBe(escId);
 
-    // escalation closed, no capture
+    // escalation closed, no capture (nothing was marked)
     const esc = getEscalation(db, escId)!;
     expect(esc.status).toBe("answered");
     expect(esc.answered_by).toBe("Maria");
@@ -140,15 +140,16 @@ describe("answerRelay — the live relay loop", () => {
     expect(res.promotedEntryId).toBeNull();
   });
 
-  it("captures the answer into a citable policy — deflection compounds", async () => {
+  it("captures a marked answer into a citable policy — deflection compounds", async () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
+    const escId = turn.message.escalationId!;
     const before = listPublishedEntries(db).length;
 
-    const res = answerRelay(db, {
-      escalationId: turn.message.escalationId!,
+    const res = answerSession(db, {
+      escalationId: escId,
       answer: "Yes — we offer up to 3 half-days a week.",
       answeredBy: "Maria",
-      capture: true,
+      captureEscalationId: escId,
       captureIntent: "hours",
     });
 
@@ -159,22 +160,143 @@ describe("answerRelay — the live relay loop", () => {
 
     // it's now published, in the queue-answer's escalation link, and in the prefix
     expect(listPublishedEntries(db).length).toBe(before + 1);
-    expect(getEscalation(db, turn.message.escalationId!)!.promoted_entry_id).toBe(
-      res.promotedEntryId,
-    );
+    expect(getEscalation(db, escId)!.promoted_entry_id).toBe(res.promotedEntryId);
     const prefix = buildSystemPrefix(getCenter(db)!, listPublishedEntries(db));
     expect(prefix).toContain(res.promotedEntryId!); // front desk can cite it next time
   });
 
-  it("rejects answering an unknown or already-answered escalation", async () => {
+  it("rejects an unknown escalation or a session with nothing waiting", async () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
-    expect(() => answerRelay(db, { escalationId: "ghost", answer: "hi", answeredBy: "M" })).toThrow(
+    expect(() => answerSession(db, { escalationId: "ghost", answer: "hi", answeredBy: "M" })).toThrow(
       /not found/i,
     );
-    answerRelay(db, { escalationId: turn.message.escalationId!, answer: "done", answeredBy: "M" });
+    answerSession(db, { escalationId: turn.message.escalationId!, answer: "done", answeredBy: "M" });
     expect(() =>
-      answerRelay(db, { escalationId: turn.message.escalationId!, answer: "again", answeredBy: "M" }),
-    ).toThrow(/already/i);
+      answerSession(db, { escalationId: turn.message.escalationId!, answer: "again", answeredBy: "M" }),
+    ).toThrow(/no waiting questions/i);
+  });
+});
+
+describe("answerSession — one reply resolves the whole family", () => {
+  /** Two waiting questions in one shared session. */
+  async function twoQuestionSession() {
+    createConversation(db, { id: "cs", session_id: "ss", active_provider: "anthropic" });
+    createParentSession(db, {
+      id: "ss",
+      name: "Pat",
+      email: "pat@example.com",
+      conversation_id: "cs",
+    });
+    const a = await handleTurn(db, {
+      question: "Do you offer part-time schedules?",
+      model: new FakeModel(outOfScope()),
+      sessionId: "ss",
+      conversationId: "cs",
+    });
+    const b = await handleTurn(db, {
+      question: "My son had a fever last night, can he come in?",
+      model: new FakeModel(caseSpecific()),
+      sessionId: "ss",
+      conversationId: "cs",
+    });
+    return { a: a.message.escalationId!, b: b.message.escalationId! };
+  }
+
+  it("closes every waiting question with a single reply and posts once", async () => {
+    const { a, b } = await twoQuestionSession();
+
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe("cs", (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
+    const res = answerSession(db, {
+      escalationId: a,
+      answer: "Here's what you need across both — happy to chat more.",
+      answeredBy: "Maria",
+    });
+    off();
+
+    expect(res.resolvedCount).toBe(2);
+    expect(res.posted).toBe(true);
+    expect(getEscalation(db, a)!.status).toBe("answered");
+    expect(getEscalation(db, b)!.status).toBe("answered");
+    // one staff message reaches the parent (not one per question)
+    expect(received).toHaveLength(1);
+    expect(listMessages(db, "cs").filter((m) => m.provenance === "staff")).toHaveLength(1);
+    // no capture unless a question is marked
+    expect(res.promotedEntryId).toBeNull();
+    expect(res.collectedKnowledge).toBe(false);
+  });
+
+  it("saves only the marked, non-case-specific question to the knowledge base", async () => {
+    const { a, b } = await twoQuestionSession();
+    const before = listPublishedEntries(db).length;
+
+    const res = answerSession(db, {
+      escalationId: a,
+      answer: "Yes — up to 3 half-days a week.",
+      answeredBy: "Maria",
+      captureEscalationId: a, // the gap
+      captureIntent: "hours",
+    });
+
+    expect(res.collectedKnowledge).toBe(true);
+    expect(listPublishedEntries(db).length).toBe(before + 1);
+    // the capture is linked to the marked question only
+    expect(getEscalation(db, a)!.promoted_entry_id).toBe(res.promotedEntryId);
+    expect(getEscalation(db, b)!.promoted_entry_id).toBeNull();
+    expect(getEntry(db, res.promotedEntryId!)!.intent).toBe("hours");
+  });
+
+  it("never saves a case-specific question as general knowledge, even if marked", async () => {
+    const { a, b } = await twoQuestionSession();
+    const before = listPublishedEntries(db).length;
+
+    const res = answerSession(db, {
+      escalationId: a,
+      answer: "Please keep him home 24h after the fever breaks.",
+      answeredBy: "Maria",
+      captureEscalationId: b, // the case-specific one
+      captureIntent: "health",
+    });
+
+    expect(res.promotedEntryId).toBeNull();
+    expect(res.collectedKnowledge).toBe(false);
+    expect(listPublishedEntries(db).length).toBe(before);
+    // still fully resolved
+    expect(getEscalation(db, a)!.status).toBe("answered");
+    expect(getEscalation(db, b)!.status).toBe("answered");
+  });
+});
+
+describe("dismissSession — clear the whole family from the queue", () => {
+  it("dismisses every waiting question in the session at once", async () => {
+    createConversation(db, { id: "cd", session_id: "sd", active_provider: "anthropic" });
+    createParentSession(db, {
+      id: "sd",
+      name: "Pat",
+      email: "pat@example.com",
+      conversation_id: "cd",
+    });
+    const a = await handleTurn(db, {
+      question: "Do you offer part-time schedules?",
+      model: new FakeModel(outOfScope()),
+      sessionId: "sd",
+      conversationId: "cd",
+    });
+    const b = await handleTurn(db, {
+      question: "What's your sick-child policy?",
+      model: new FakeModel(caseSpecific()),
+      sessionId: "sd",
+      conversationId: "cd",
+    });
+
+    expect(dismissSession(db, a.message.escalationId!)).toBe(2);
+    expect(getEscalation(db, a.message.escalationId!)!.status).toBe("dismissed");
+    expect(getEscalation(db, b.message.escalationId!)!.status).toBe("dismissed");
+    expect(buildRelayQueue(db)).toHaveLength(0);
+    // idempotent — nothing left waiting
+    expect(dismissSession(db, a.message.escalationId!)).toBe(0);
   });
 });
 
@@ -203,7 +325,9 @@ describe("sendRelayMessage — mid-relay context gathering", () => {
     const staff = listMessages(db, turn.conversationId).filter((m) => m.provenance === "staff");
     expect(staff).toHaveLength(1);
     expect(getEscalation(db, escId)!.status).toBe("waiting");
-    expect(buildRelayQueue(db).some((q) => q.escalationId === escId)).toBe(true);
+    expect(
+      buildRelayQueue(db).some((q) => q.pending.some((p) => p.escalationId === escId)),
+    ).toBe(true);
   });
 
   it("rejects an unknown or already-handled escalation", async () => {
@@ -211,7 +335,7 @@ describe("sendRelayMessage — mid-relay context gathering", () => {
     expect(() =>
       sendRelayMessage(db, { escalationId: "ghost", text: "hi", answeredBy: "M" }),
     ).toThrow(/not found/i);
-    answerRelay(db, { escalationId: turn.message.escalationId!, answer: "done", answeredBy: "M" });
+    answerSession(db, { escalationId: turn.message.escalationId!, answer: "done", answeredBy: "M" });
     expect(() =>
       sendRelayMessage(db, { escalationId: turn.message.escalationId!, text: "more", answeredBy: "M" }),
     ).toThrow(/already/i);
@@ -225,7 +349,7 @@ describe("queue_changed broadcast — the live nav badge (SSE, no polling)", () 
 
     const a = await relayTurn(new FakeModel(outOfScope())); // → 1 waiting
     const b = await relayTurn(new FakeModel(outOfScope())); // → 2 waiting
-    answerRelay(db, { escalationId: a.message.escalationId!, answer: "done", answeredBy: "M" }); // → 1
+    answerSession(db, { escalationId: a.message.escalationId!, answer: "done", answeredBy: "M" }); // → 1
     dismissEscalation(db, b.message.escalationId!);
     // dismissEscalation is a pure repo write; the route publishes. Mirror that:
     const { publishQueueCount } = await import("./queue");
@@ -253,7 +377,9 @@ describe("dismissEscalation — 'session no longer active'", () => {
 
     expect(dismissEscalation(db, escId)).toBe(true);
     expect(getEscalation(db, escId)!.status).toBe("dismissed");
-    expect(buildRelayQueue(db).some((q) => q.escalationId === escId)).toBe(false);
+    expect(
+      buildRelayQueue(db).some((q) => q.pending.some((p) => p.escalationId === escId)),
+    ).toBe(false);
 
     // idempotent — a non-waiting escalation is a no-op
     expect(dismissEscalation(db, escId)).toBe(false);
@@ -288,6 +414,56 @@ describe("buildRelayThread — the operator's context view", () => {
     expect(staff?.answeredBy).toBeNull(); // not resolved yet, so no answered_by
   });
 
+  it("surfaces every waiting question and tags the parent message that triggered each", async () => {
+    createConversation(db, { id: "ct", session_id: "st", active_provider: "anthropic" });
+    createParentSession(db, {
+      id: "st",
+      name: "Pat",
+      email: "pat@example.com",
+      conversation_id: "ct",
+    });
+    const first = await handleTurn(db, {
+      question: "Do you offer part-time schedules?",
+      model: new FakeModel(outOfScope()),
+      sessionId: "st",
+      conversationId: "ct",
+    });
+    const second = await handleTurn(db, {
+      question: "What's your sick-child policy?",
+      model: new FakeModel(caseSpecific()),
+      sessionId: "st",
+      conversationId: "ct",
+    });
+
+    // Opening either escalation yields the same session-wide view.
+    const thread = buildRelayThread(db, first.message.escalationId!)!;
+    expect(thread.sessionId).toBe("st");
+    expect(thread.pending.map((p) => p.escalationId)).toEqual([
+      first.message.escalationId,
+      second.message.escalationId,
+    ]);
+
+    // Each pending question is tagged onto the parent message that triggered it.
+    const tagged = thread.messages.filter((m) => m.pendingEscalationId);
+    expect(tagged).toHaveLength(2);
+    expect(tagged.find((m) => m.text.match(/part-time/i))?.pendingEscalationId).toBe(
+      first.message.escalationId,
+    );
+    expect(tagged.find((m) => m.text.match(/sick-child/i))?.pendingEscalationId).toBe(
+      second.message.escalationId,
+    );
+
+    // One reply resolves the whole session — every tag clears at once.
+    answerSession(db, {
+      escalationId: first.message.escalationId!,
+      answer: "Yes — up to 3 half-days a week.",
+      answeredBy: "Maria",
+    });
+    const after = buildRelayThread(db, first.message.escalationId!)!;
+    expect(after.pending).toHaveLength(0);
+    expect(after.messages.filter((m) => m.pendingEscalationId)).toHaveLength(0);
+  });
+
   it("returns null for an unknown escalation", () => {
     expect(buildRelayThread(db, "ghost")).toBeNull();
   });
@@ -306,7 +482,7 @@ describe("parent left the session — collect knowledge instead of posting", () 
     });
   }
 
-  it("answers → saves to knowledge, streams nothing, still resolves", async () => {
+  it("marked answer saves to knowledge, streams nothing, still resolves", async () => {
     const turn = await relayWithSession("s1", "c1");
     const escId = turn.message.escalationId!;
     closeSession(db, "s1", "parent"); // the parent leaves
@@ -315,10 +491,12 @@ describe("parent left the session — collect knowledge instead of posting", () 
     const off = getRelayBus().subscribe(turn.conversationId, (e) => {
       if (e.type === "staff_message") received.push(e);
     });
-    const res = answerRelay(db, {
+    const res = answerSession(db, {
       escalationId: escId,
       answer: "Yes — up to 3 half-days a week.",
       answeredBy: "Maria",
+      captureEscalationId: escId, // the operator marks it to save
+      captureIntent: "hours",
     });
     off();
 
@@ -330,9 +508,26 @@ describe("parent left the session — collect knowledge instead of posting", () 
     expect(getEscalation(db, escId)!.status).toBe("answered"); // still resolved
   });
 
+  it("an unmarked parent-left reply collects nothing — just closes out", async () => {
+    const turn = await relayWithSession("s1b", "c1b");
+    const escId = turn.message.escalationId!;
+    closeSession(db, "s1b", "parent");
+
+    const res = answerSession(db, {
+      escalationId: escId,
+      answer: "Closing this out.",
+      answeredBy: "Maria",
+    });
+
+    expect(res.posted).toBe(false);
+    expect(res.collectedKnowledge).toBe(false); // nothing marked → no knowledge
+    expect(res.promotedEntryId).toBeNull();
+    expect(getEscalation(db, escId)!.status).toBe("answered"); // still resolved
+  });
+
   it("still posts live when the parent is present", async () => {
     const turn = await relayWithSession("s2", "c2");
-    const res = answerRelay(db, {
+    const res = answerSession(db, {
       escalationId: turn.message.escalationId!,
       answer: "Yes — up to 3 half-days a week.",
       answeredBy: "Maria",
@@ -360,13 +555,15 @@ describe("parent left the session — collect knowledge instead of posting", () 
     });
     closeSession(db, "s5", "parent");
 
-    const res = answerRelay(db, {
+    const res = answerSession(db, {
       escalationId: cs.message.escalationId!,
       answer: "Please keep her home 24h after the fever breaks.",
       answeredBy: "Maria",
+      captureEscalationId: cs.message.escalationId!, // even if the operator marks it…
+      captureIntent: "health",
     });
     expect(res.posted).toBe(false);
-    expect(res.collectedKnowledge).toBe(false); // a specific case is never general knowledge
+    expect(res.collectedKnowledge).toBe(false); // …a specific case is never general knowledge
     expect(res.promotedEntryId).toBeNull();
     expect(getEscalation(db, cs.message.escalationId!)!.status).toBe("answered");
   });
@@ -377,7 +574,10 @@ describe("parent left the session — collect knowledge instead of posting", () 
     expect(buildRelayThread(db, escId)!.parentPresent).toBe(true);
     closeSession(db, "s6", "parent");
     expect(buildRelayThread(db, escId)!.parentPresent).toBe(false);
-    expect(buildRelayQueue(db).find((q) => q.escalationId === escId)!.parentPresent).toBe(false);
+    expect(
+      buildRelayQueue(db).find((q) => q.pending.some((p) => p.escalationId === escId))!
+        .parentPresent,
+    ).toBe(false);
   });
 });
 
@@ -423,7 +623,7 @@ describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3
     const off = getRelayBus().subscribe(turn.conversationId, (e) => {
       if (e.type === "staff_message") received.push(e);
     });
-    const res = answerRelay(db, {
+    const res = answerSession(db, {
       escalationId: escId,
       answer: "Yes — up to 3 half-days a week.",
       answeredBy: "Maria",
@@ -435,8 +635,10 @@ describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3
     expect(res.contactEmail).toBe("sam@example.com");
 
     // the queue surfaces the captured contact
-    const item = buildRelayQueue(db).find((q) => q.escalationId === escId);
-    // (already answered → gone from waiting queue; refetch a fresh waiting one instead)
+    const item = buildRelayQueue(db).find((q) =>
+      q.pending.some((p) => p.escalationId === escId),
+    );
+    // (already answered → gone from waiting queue)
     expect(item).toBeUndefined();
   });
 
@@ -448,7 +650,9 @@ describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3
       contact_name: "Sam",
       contact_email: "sam@example.com",
     });
-    const item = buildRelayQueue(db).find((q) => q.escalationId === turn.message.escalationId);
+    const item = buildRelayQueue(db).find((q) =>
+      q.pending.some((p) => p.escalationId === turn.message.escalationId),
+    );
     expect(item?.delivery).toBe("email");
     expect(item?.contactEmail).toBe("sam@example.com");
   });
@@ -459,17 +663,51 @@ describe("buildRelayQueue", () => {
     await relayTurn(new FakeModel(caseSpecific())); // health, case-specific, cites illness policy
     await relayTurn(new FakeModel(outOfScope())); // gap
 
+    // Each turn is its own session (no shared session/conversation id), so each
+    // becomes a distinct queue entry with a single pending question.
     const queue = buildRelayQueue(db);
     expect(queue).toHaveLength(2);
 
-    const health = queue.find((q) => q.reason === "sensitive:case_specific")!;
+    const health = queue.flatMap((q) => q.pending).find((p) => p.reason === "sensitive:case_specific")!;
     expect(health.isCaseSpecific).toBe(true);
     expect(health.captureDefault).toBe(false);
     expect(health.aiReferenced).toContain("When to Keep Your Child Home");
 
-    const gap = queue.find((q) => q.reason === "out_of_scope")!;
+    const gap = queue.flatMap((q) => q.pending).find((p) => p.reason === "out_of_scope")!;
     expect(gap.isCaseSpecific).toBe(false);
     expect(gap.captureDefault).toBe(true);
+  });
+
+  it("groups several waiting questions from one session into a single entry", async () => {
+    createConversation(db, { id: "cg", session_id: "sg", active_provider: "anthropic" });
+    createParentSession(db, {
+      id: "sg",
+      name: "Pat",
+      email: "pat@example.com",
+      conversation_id: "cg",
+    });
+    await handleTurn(db, {
+      question: "Do you offer part-time schedules?",
+      model: new FakeModel(outOfScope()),
+      sessionId: "sg",
+      conversationId: "cg",
+    });
+    await handleTurn(db, {
+      question: "What's your sick-child policy?",
+      model: new FakeModel(caseSpecific()),
+      sessionId: "sg",
+      conversationId: "cg",
+    });
+
+    const queue = buildRelayQueue(db);
+    expect(queue).toHaveLength(1);
+    const entry = queue[0];
+    expect(entry.sessionId).toBe("sg");
+    expect(entry.parentName).toBe("Pat");
+    expect(entry.pending).toHaveLength(2);
+    // oldest-first, and the primary is the oldest waiting question
+    expect(entry.pending[0].question).toMatch(/part-time/i);
+    expect(entry.primaryEscalationId).toBe(entry.pending[0].escalationId);
   });
 });
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
-import { answerRelay } from "@/lib/relay/answer";
+import { answerSession } from "@/lib/relay/answer";
 import { getEmailSender } from "@/lib/email/sender";
 import { markEscalationDelivered } from "@/lib/repo/escalations";
 import { getCenter } from "@/lib/repo/center";
@@ -12,9 +12,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Operator answers a waiting escalation. The reply relays into the parent's
- * thread live (via the bus → SSE), marked "✓ From our team"; on capture it also
- * becomes a citable KnowledgeEntry so the front desk answers it next time.
+ * Operator resolves a family's whole relay in one message: the reply relays into
+ * the parent's thread live (via the bus → SSE), marked "✓ From our team", and
+ * every waiting question for that session is closed at once. Saving to the
+ * knowledge base is opt-in — `captureEscalationId` names the one question to
+ * promote to a citable KnowledgeEntry so the front desk answers it next time.
  */
 export async function POST(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
@@ -28,7 +30,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const capture = body.capture === true;
+    // A marked question opts this reply into knowledge capture; absent it, the
+    // reply just resolves the session with nothing collected.
+    const captureEscalationId =
+      typeof body.captureEscalationId === "string" && body.captureEscalationId
+        ? body.captureEscalationId
+        : null;
     // Categories are operator-configurable, so accept any non-empty token.
     const captureIntentRaw =
       typeof body.captureIntent === "string"
@@ -40,15 +47,15 @@ export async function POST(request: Request) {
 
     // Attribution: the client sends the operator's name; if it's blank, fall
     // back to the persisted on-duty operator (analysis/11 §4.5) before
-    // answerRelay's generic "Front Desk Team" safety net.
+    // answerSession's generic "Front Desk Team" safety net.
     const bodyAnsweredBy = typeof body.answeredBy === "string" ? body.answeredBy.trim() : "";
     const answeredBy = bodyAnsweredBy || getSettings(getDb()).operator_name;
 
-    const result = answerRelay(getDb(), {
+    const result = answerSession(getDb(), {
       escalationId,
       answer,
       answeredBy,
-      capture,
+      captureEscalationId,
       captureIntent,
       captureTitle: typeof body.captureTitle === "string" ? body.captureTitle : undefined,
     });

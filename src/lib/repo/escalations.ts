@@ -76,9 +76,11 @@ export function getEscalation(db: Database, id: string): Escalation | null {
 
 /** Waiting escalations, oldest first — the live-relay queue (analysis/03 §4.2). */
 export function listWaitingEscalations(db: Database): Escalation[] {
+  // rowid tiebreak keeps insertion order when two escalations from one session
+  // share a millisecond timestamp — so "oldest first" is deterministic.
   return db
     .prepare(
-      `SELECT * FROM escalations WHERE status = 'waiting' ORDER BY created_at, id`,
+      `SELECT * FROM escalations WHERE status = 'waiting' ORDER BY created_at, rowid`,
     )
     .all() as Escalation[];
 }

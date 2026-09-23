@@ -2,45 +2,19 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import type { EscalationDelivery, Intent } from "../types";
 import { getAuditContext } from "../repo/audit";
-import { answerEscalation, getEscalation } from "../repo/escalations";
+import {
+  answerEscalation,
+  dismissEscalation,
+  getEscalation,
+  listWaitingEscalations,
+  type Escalation,
+} from "../repo/escalations";
 import { hasParentLeft } from "../repo/sessions";
 import { appendMessage } from "../repo/messages";
 import { upsertEntry } from "../repo/knowledge";
 import { buildCapturedPolicy } from "./capture";
 import { getRelayBus } from "./bus";
 import { publishQueueCount } from "./queue";
-
-/**
- * The operator answers a waiting escalation (analysis/03 §4.2 — the money shot).
- * In one transaction we optionally capture the answer as a citable KnowledgeEntry,
- * mark the escalation answered, and append a `staff` message into the parent's
- * thread. After commit we publish it to the relay bus so it streams live into
- * the parent's open SSE connection, marked "✓ From our team".
- */
-export interface AnswerInput {
-  escalationId: string;
-  answer: string;
-  answeredBy: string;
-  /** Promote this answer to a citable policy (deflection compounds). */
-  capture?: boolean;
-  captureIntent?: Intent;
-  captureTitle?: string;
-}
-
-export interface AnswerResult {
-  conversationId: string;
-  messageId: string;
-  answeredBy: string;
-  promotedEntryId: string | null;
-  /** How this answer reaches the parent — the route sends the email for "email". */
-  delivery: EscalationDelivery;
-  contactName: string | null;
-  contactEmail: string | null;
-  /** True when the reply streamed to a live parent (false if they'd left). */
-  posted: boolean;
-  /** True when the parent had left and the answer was saved as knowledge instead. */
-  collectedKnowledge: boolean;
-}
 
 /**
  * Send a mid-relay message to the parent WITHOUT resolving the escalation — the
@@ -114,39 +88,92 @@ export function sendRelayMessage(db: Database, input: SendMessageInput): SentMes
   };
 }
 
-export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
+/** Every still-waiting escalation from the same family as `esc` (queue grouping). */
+function sessionWaiting(db: Database, esc: Escalation, sessionId: string | null): Escalation[] {
+  return listWaitingEscalations(db).filter((e) => {
+    if (!e.interaction_id) return e.id === esc.id;
+    const s = getAuditContext(db, e.interaction_id)?.session_id ?? null;
+    return sessionId && s ? s === sessionId : e.id === esc.id;
+  });
+}
+
+/**
+ * Resolve a whole session's relay in ONE message (analysis/03 §4.2, refined). The
+ * operator reads the thread and sends a single reply that closes *every* waiting
+ * question for that family — they don't answer them one by one. Saving to the
+ * knowledge base is opt-in and tied to a specific question the operator marked
+ * (`captureEscalationId`): a plain reply collects no knowledge; a marked,
+ * non-case-specific question becomes a citable KnowledgeEntry so the front desk
+ * handles it next time.
+ */
+export interface AnswerSessionInput {
+  /** Any escalation in the target session (typically the one the operator opened). */
+  escalationId: string;
+  answer: string;
+  answeredBy: string;
+  /** The pending question to promote to knowledge, or null/undefined for none. */
+  captureEscalationId?: string | null;
+  captureIntent?: Intent;
+  captureTitle?: string;
+}
+
+export interface AnswerSessionResult {
+  conversationId: string;
+  sessionId: string;
+  /** How many waiting questions this one reply closed. */
+  resolvedCount: number;
+  promotedEntryId: string | null;
+  delivery: EscalationDelivery;
+  contactName: string | null;
+  contactEmail: string | null;
+  /** True when the reply streamed to a live parent. */
+  posted: boolean;
+  /** True when a marked question was saved to the knowledge base. */
+  collectedKnowledge: boolean;
+}
+
+export function answerSession(db: Database, input: AnswerSessionInput): AnswerSessionResult {
   const answer = input.answer.trim();
-  if (!answer) throw new Error("Answer text is required.");
 
   const esc = getEscalation(db, input.escalationId);
   if (!esc) throw new Error("Escalation not found.");
-  if (esc.status !== "waiting") {
-    throw new Error("This escalation has already been handled.");
-  }
   if (!esc.interaction_id) throw new Error("Escalation has no interaction.");
 
   const ctx = getAuditContext(db, esc.interaction_id);
   if (!ctx) throw new Error("Could not find the conversation for this escalation.");
+  const sessionId = ctx.session_id;
 
-  // If the parent has left a live relay there's no chat to post into — the
-  // answer's remaining value is knowledge, so we skip the live message and
-  // collect it instead (except a specific case, which never becomes general
-  // knowledge). An email follow-up is never "posted live" regardless.
-  const parentGone = esc.delivery === "live" && hasParentLeft(db, ctx.session_id);
+  const waiting = sessionWaiting(db, esc, sessionId);
+  if (waiting.length === 0) throw new Error("This session has no waiting questions.");
+
+  // Parent gone from a live relay → nothing to post; email is delivered by the
+  // route, never streamed. Otherwise the reply streams into the open thread.
+  const parentGone = esc.delivery === "live" && hasParentLeft(db, sessionId);
   const postLive = esc.delivery === "live" && !parentGone;
-  const isCaseSpecific = esc.reason.startsWith("sensitive:");
-  const doCapture = !!input.capture || (parentGone && !isCaseSpecific);
+
+  // Capture is opt-in (a marked question) and never a case-specific one.
+  const captureEsc = input.captureEscalationId
+    ? waiting.find((e) => e.id === input.captureEscalationId) ?? null
+    : null;
+  const doCapture = !!captureEsc && !captureEsc.reason.startsWith("sensitive:");
+
+  // A delivered reply (live or email) needs text; a pure parent-gone close-out
+  // does not — unless it's saving knowledge, which needs the answer body.
+  if ((postLive || esc.delivery === "email" || doCapture) && !answer) {
+    throw new Error("Answer text is required.");
+  }
 
   const answeredBy = input.answeredBy.trim() || "Front Desk Team";
   const messageId = randomUUID();
+  const routeEscalationId = captureEsc?.id ?? esc.id;
 
   const commit = db.transaction(() => {
     let promotedEntryId: string | null = null;
-    if (doCapture) {
+    if (doCapture && captureEsc) {
       const intent: Intent = input.captureIntent ?? "tours";
       const policy = buildCapturedPolicy({
         intent,
-        question: esc.question,
+        question: captureEsc.question,
         answer,
         title: input.captureTitle,
         answeredBy,
@@ -156,23 +183,25 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
       promotedEntryId = policy.id;
     }
 
-    answerEscalation(db, {
-      id: esc.id,
-      answer,
-      answeredBy,
-      promotedEntryId,
-    });
+    // One reply closes every waiting question in the session.
+    for (const w of waiting) {
+      answerEscalation(db, {
+        id: w.id,
+        answer,
+        answeredBy,
+        promotedEntryId: w.id === captureEsc?.id ? promotedEntryId : null,
+      });
+    }
 
-    // Only append a chat message when there's a live parent to receive it.
     let createdAt: string | null = null;
-    if (postLive) {
+    if (postLive && answer) {
       const message = appendMessage(db, {
         id: messageId,
         conversation_id: ctx.conversation_id,
         role: "frontdesk",
         provenance: "staff",
         text: answer,
-        escalation_id: esc.id,
+        escalation_id: routeEscalationId,
       });
       createdAt = message.created_at;
     }
@@ -182,38 +211,40 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
 
   const { promotedEntryId, createdAt } = commit();
 
-  // The escalation left the waiting queue — push the fresh count to operators.
   publishQueueCount(db);
 
-  // Live relay streams into the parent's open SSE connection; an email
-  // follow-up is delivered by the route via the EmailSender instead, never the
-  // bus (analysis/11 §4.4). We publish AFTER commit so subscribers never see
-  // uncommitted state.
   if (postLive && createdAt) {
     getRelayBus().publish({
       type: "staff_message",
       conversationId: ctx.conversation_id,
-      message: {
-        id: messageId,
-        escalationId: esc.id,
-        text: answer,
-        answeredBy,
-        createdAt,
-      },
+      message: { id: messageId, escalationId: routeEscalationId, text: answer, answeredBy, createdAt },
     });
   }
 
   return {
     conversationId: ctx.conversation_id,
-    messageId,
-    answeredBy,
+    sessionId,
+    resolvedCount: waiting.length,
     promotedEntryId,
     delivery: esc.delivery,
     contactName: esc.contact_name,
     contactEmail: esc.contact_email,
-    /** True when the reply streamed to a live parent. */
-    posted: postLive,
-    /** True when the parent had left and the answer was saved as knowledge. */
-    collectedKnowledge: parentGone && promotedEntryId != null,
+    posted: postLive && !!answer,
+    collectedKnowledge: promotedEntryId != null,
   };
+}
+
+/**
+ * Dismiss a whole session's relay — the family left or the thread went stale.
+ * Drops every waiting question out of the queue without a reply. Returns how many
+ * were dismissed (0 if none were still waiting).
+ */
+export function dismissSession(db: Database, escalationId: string): number {
+  const esc = getEscalation(db, escalationId);
+  if (!esc || !esc.interaction_id) return dismissEscalation(db, escalationId) ? 1 : 0;
+  const ctx = getAuditContext(db, esc.interaction_id);
+  const waiting = sessionWaiting(db, esc, ctx?.session_id ?? null);
+  let n = 0;
+  for (const w of waiting) if (dismissEscalation(db, w.id)) n++;
+  return n;
 }

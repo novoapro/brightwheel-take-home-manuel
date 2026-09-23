@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
-import { dismissEscalation } from "@/lib/repo/escalations";
+import { dismissSession } from "@/lib/relay/answer";
 import { publishQueueCount } from "@/lib/relay/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Operator dismisses a waiting escalation that's no longer actionable (the
- * parent left, the thread went stale). It drops out of the queue without a reply
- * being relayed. Idempotent — a non-waiting escalation is a no-op.
+ * Operator dismisses a family's whole relay when it's no longer actionable (the
+ * parent left, the thread went stale). Every waiting question for that session
+ * drops out of the queue without a reply. Idempotent — nothing waiting is a no-op.
  */
 export async function POST(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
@@ -20,9 +20,9 @@ export async function POST(request: Request) {
     if (!escalationId) {
       return NextResponse.json({ ok: false, error: "Missing 'escalationId'." }, { status: 400 });
     }
-    const dismissed = dismissEscalation(getDb(), escalationId);
+    const dismissed = dismissSession(getDb(), escalationId);
     // Dropped from the waiting queue — push the fresh count to operators live.
-    if (dismissed) publishQueueCount(getDb());
+    if (dismissed > 0) publishQueueCount(getDb());
     return NextResponse.json({ ok: true, dismissed });
   } catch (err) {
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 400 });
