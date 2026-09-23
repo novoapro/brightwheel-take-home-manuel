@@ -12,7 +12,9 @@ import type { Database } from "better-sqlite3";
  * analysis/09 §4 so bad values can't reach the DB.
  *
  * The `embedding` / `question_embedding` BLOBs are reserved but unpopulated in
- * v1 (structured-only — analysis/01 §5, §10).
+ * v1 (structured-only — analysis/01 §5, §10). A few `interaction_audit` columns
+ * (`retrieval`, `latency_human_response_ms`, `operator_disposition`) are likewise
+ * reserved for planned analytics/triage work — kept intentionally, not dead.
  *
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
@@ -108,12 +110,12 @@ CREATE TABLE IF NOT EXISTS interaction_audit (
   model                     TEXT,
   response_text             TEXT,
   cited_sources             TEXT NOT NULL DEFAULT '[]',   -- JSON array of policy ids
-  retrieval                 TEXT,                          -- JSON, deferred layer
+  retrieval                 TEXT,                          -- JSON; reserved for a retrieval layer, unpopulated in v1
   checks                    TEXT,                          -- JSON guardrail results
   latency_first_response_ms INTEGER,
-  latency_human_response_ms INTEGER,
+  latency_human_response_ms INTEGER,                       -- reserved for relay-reply latency, unpopulated in v1
   parent_feedback           TEXT CHECK (parent_feedback IN ('up','down')),
-  operator_disposition      TEXT,                          -- JSON
+  operator_disposition      TEXT,                          -- JSON; reserved for operator triage outcomes, unpopulated in v1
   judge_scores              TEXT                           -- JSON
 );
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON interaction_audit (timestamp);
