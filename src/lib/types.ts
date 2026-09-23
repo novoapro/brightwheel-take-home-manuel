@@ -93,13 +93,40 @@ export interface PolicyInput {
 }
 
 export type CautionLevel = "cautious" | "balanced" | "lean";
-export type Provider = "claude" | "gemini";
+/** Neutral provider ids (analysis/11 §3.1); exactly one is active at a time. */
+export type Provider = "anthropic" | "openai" | "google";
+export type Availability = "online" | "away";
 
-/** Settings — operator-controlled, single row (analysis/01 §2.6). */
+/** Longest operator name we store / render (analysis/11 §4.6). */
+export const OPERATOR_NAME_MAX = 60;
+
+/** Settings — operator-controlled, single row (analysis/01 §2.6, analysis/11 §4). */
 export interface Settings {
   caution_level: CautionLevel;
   active_provider: Provider;
+  /** Online = live staff relay; Away = handbook-only + async follow-up (analysis/11 §4.1). */
+  availability: Availability;
+  /**
+   * The on-duty operator, center-wide and persisted across Online/Away.
+   * A non-empty name is required to be Online (analysis/11 §4.1); it feeds the
+   * parent "🟢 {name} is at the front desk" pill and answer attribution.
+   */
+  operator_name: string;
+  /** Optional custom Away disclaimer; empty falls back to the default (analysis/11 §4.2). */
+  away_message: string;
+  /**
+   * When set (ISO), the desk auto-flips to Away at this time — resolved lazily on
+   * read (no scheduler). Null = stay Online until manually closed (analysis/11 §4.1).
+   */
+  offline_at: string | null;
 }
+
+/** How a staff answer reaches the parent (analysis/11 §4.3). */
+export type EscalationDelivery = "live" | "email";
+
+/** Longest custom Away note / captured contact we store (analysis/11 §6). */
+export const AWAY_MESSAGE_MAX = 280;
+export const CONTACT_FIELD_MAX = 120;
 
 /**
  * Center — identity + globally-relevant facts (analysis/01 §2.1).

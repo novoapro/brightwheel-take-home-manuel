@@ -10,7 +10,12 @@ import {
 import { createEscalation } from "./repo/escalations";
 import { appendMessage, listMessages } from "./repo/messages";
 import { getPolicy } from "./repo/policies";
-import { getSettings } from "./repo/settings";
+import { resolveAvailability } from "./repo/settings";
+import type { EscalationDelivery } from "./types";
+
+/** Holding text when we relay while Away — pairs with the parent contact form. */
+const AWAY_RELAY_TEXT =
+  "I want to get this exactly right, so I'll pass it to our team. We're away right now — leave your email below and we'll follow up, usually within one business day.";
 
 /**
  * The parent-turn orchestrator (analysis/03 §3.4, analysis/04 §1): runs the
@@ -41,6 +46,8 @@ export interface TurnResult {
     provenance: "grounded" | null;
     citations: Citation[];
     escalationId: string | null;
+    /** On relay: "live" = SSE relay, "email" = Away async follow-up (analysis/11 §4.3). */
+    delivery: EscalationDelivery | null;
   };
 }
 
@@ -63,7 +70,7 @@ export async function handleTurn(
   db: Database,
   input: HandleTurnInput,
 ): Promise<TurnResult> {
-  const settings = getSettings(db);
+  const settings = resolveAvailability(db);
   const existing = input.conversationId
     ? getConversation(db, input.conversationId)
     : null;
@@ -90,6 +97,14 @@ export async function handleTurn(
   const interactionId = randomUUID();
   const auditDecision = decision.decision === "answered" ? "answered" : "escalated";
   let escalationId: string | null = null;
+
+  // Availability branches only the escalation path (analysis/11 §4.3): grounded
+  // answers are unaffected. Away → email follow-up with an honest holding message.
+  const relayedAway =
+    decision.decision === "relayed" && settings.availability === "away";
+  const delivery: EscalationDelivery | null =
+    decision.decision === "relayed" ? (relayedAway ? "email" : "live") : null;
+  const parentText = relayedAway ? AWAY_RELAY_TEXT : decision.parent_message;
 
   const commit = db.transaction(() => {
     if (!existing) {
@@ -133,6 +148,7 @@ export async function handleTurn(
         question: input.question,
         detected_intent: decision.intent,
         reason: decision.reason,
+        delivery: delivery ?? "live",
       });
     }
 
@@ -142,7 +158,7 @@ export async function handleTurn(
       role: "frontdesk",
       // Holding messages carry no provenance until a staff member answers (M4).
       provenance: decision.decision === "answered" ? "grounded" : null,
-      text: decision.parent_message,
+      text: parentText,
       citations: decision.decision === "answered" ? decision.citations : [],
       escalation_id: escalationId,
     });
@@ -156,13 +172,14 @@ export async function handleTurn(
     decision: decision.decision,
     reason: decision.reason,
     message: {
-      text: decision.parent_message,
+      text: parentText,
       provenance: decision.decision === "answered" ? "grounded" : null,
       citations:
         decision.decision === "answered"
           ? citationsOf(db, decision.citations)
           : [],
       escalationId,
+      delivery,
     },
   };
 }

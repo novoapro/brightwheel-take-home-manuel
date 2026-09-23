@@ -15,7 +15,7 @@ import type {
 } from "./model/types";
 
 class FakeModel implements FrontDeskModel {
-  readonly provider = "claude" as const;
+  readonly provider = "anthropic" as const;
   readonly answererModel = "fake-answerer";
   lastHistory: Msg[] = [];
   constructor(private result: GroundedResult) {}

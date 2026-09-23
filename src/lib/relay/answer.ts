@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { Intent } from "../types";
+import type { EscalationDelivery, Intent } from "../types";
 import { getAuditContext } from "../repo/audit";
 import { answerEscalation, getEscalation } from "../repo/escalations";
 import { appendMessage } from "../repo/messages";
@@ -30,6 +30,10 @@ export interface AnswerResult {
   messageId: string;
   answeredBy: string;
   promotedPolicyId: string | null;
+  /** How this answer reaches the parent — the route sends the email for "email". */
+  delivery: EscalationDelivery;
+  contactName: string | null;
+  contactEmail: string | null;
 }
 
 export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
@@ -86,23 +90,31 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
 
   const { promotedPolicyId, createdAt } = commit();
 
-  // Publish AFTER the commit so subscribers never see uncommitted state.
-  getRelayBus().publish({
-    type: "staff_message",
-    conversationId: ctx.conversation_id,
-    message: {
-      id: messageId,
-      escalationId: esc.id,
-      text: answer,
-      answeredBy,
-      createdAt,
-    },
-  });
+  // Live relay streams into the parent's open SSE connection; an email
+  // follow-up is delivered by the route via the EmailSender instead, never the
+  // bus (analysis/11 §4.4). We publish AFTER commit so subscribers never see
+  // uncommitted state.
+  if (esc.delivery === "live") {
+    getRelayBus().publish({
+      type: "staff_message",
+      conversationId: ctx.conversation_id,
+      message: {
+        id: messageId,
+        escalationId: esc.id,
+        text: answer,
+        answeredBy,
+        createdAt,
+      },
+    });
+  }
 
   return {
     conversationId: ctx.conversation_id,
     messageId,
     answeredBy,
     promotedPolicyId,
+    delivery: esc.delivery,
+    contactName: esc.contact_name,
+    contactEmail: esc.contact_email,
   };
 }

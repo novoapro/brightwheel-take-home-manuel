@@ -3,6 +3,7 @@ import { getModel } from "./model";
 import type { FrontDeskModel } from "./model/types";
 import { setJudgeScores } from "./repo/audit";
 import { getPolicy } from "./repo/policies";
+import { getSettings } from "./repo/settings";
 
 /**
  * Async groundedness judge (analysis/04 §7, build M6). Runs the Haiku judge OFF
@@ -18,7 +19,7 @@ export async function judgeInteraction(
     answer: string;
     citationIds: string[];
   },
-  model: FrontDeskModel = getModel(),
+  model?: FrontDeskModel,
 ): Promise<{ groundedness: number; answer_relevancy: number } | null> {
   const citedPolicies = input.citationIds.flatMap((id) => {
     const p = getPolicy(db, id);
@@ -26,7 +27,9 @@ export async function judgeInteraction(
   });
   if (citedPolicies.length === 0) return null; // nothing grounded to judge
 
-  const scores = await model.judgeGroundedness({
+  // Judge on the configured provider, with its decrypted key (analysis/11 §3.4).
+  const judge = model ?? getModel(getSettings(db).active_provider, db);
+  const scores = await judge.judgeGroundedness({
     question: input.question,
     answer: input.answer,
     citedPolicies,

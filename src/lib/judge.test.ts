@@ -13,7 +13,7 @@ import type {
 } from "./model/types";
 
 class JudgeFake implements FrontDeskModel {
-  readonly provider = "claude" as const;
+  readonly provider = "anthropic" as const;
   readonly answererModel = "fake";
   calls = 0;
   constructor(private scores: JudgeResult) {}
@@ -33,7 +33,7 @@ beforeEach(() => {
   db = createMemoryDb();
   seedDatabase(db);
   const conversationId = randomUUID();
-  createConversation(db, { id: conversationId, session_id: "s", active_provider: "claude" });
+  createConversation(db, { id: conversationId, session_id: "s", active_provider: "anthropic" });
   interactionId = randomUUID();
   insertAudit(db, {
     id: interactionId,

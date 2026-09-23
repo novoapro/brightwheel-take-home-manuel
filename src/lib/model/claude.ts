@@ -37,19 +37,32 @@ const JudgeSchema = z.object({
   answer_relevancy: z.number().min(0).max(1),
 });
 
+export interface ClaudeConfig {
+  /** Explicit key (from decrypted DB creds); falls back to env when absent. */
+  apiKey?: string;
+  answererModel?: string;
+  judgeModel?: string;
+  client?: Anthropic;
+}
+
 export class ClaudeFrontDeskModel implements FrontDeskModel {
-  readonly provider = "claude" as const;
-  readonly answererModel = ANSWERER_MODEL;
+  readonly provider = "anthropic" as const;
+  readonly answererModel: string;
+  private readonly judgeModel: string;
   private client: Anthropic;
 
-  constructor(client?: Anthropic) {
-    // Zero-arg client resolves ANTHROPIC_API_KEY / auth profile from the env.
-    this.client = client ?? new Anthropic();
+  constructor(config: ClaudeConfig = {}) {
+    // An explicit apiKey comes from decrypted DB creds; the zero-arg client
+    // resolves ANTHROPIC_API_KEY / auth profile from the env (bootstrap fallback).
+    this.client =
+      config.client ?? (config.apiKey ? new Anthropic({ apiKey: config.apiKey }) : new Anthropic());
+    this.answererModel = config.answererModel ?? ANSWERER_MODEL;
+    this.judgeModel = config.judgeModel ?? JUDGE_MODEL;
   }
 
   async groundedAnswer(input: GroundedAnswerInput): Promise<GroundedResult> {
     const response = await this.client.messages.parse({
-      model: ANSWERER_MODEL,
+      model: this.answererModel,
       max_tokens: 2000,
       thinking: { type: "adaptive" },
       // Cache the stable prefix; pay input only for the (short) question.
@@ -85,7 +98,7 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
       .join("\n\n");
 
     const response = await this.client.messages.parse({
-      model: JUDGE_MODEL,
+      model: this.judgeModel,
       max_tokens: 500,
       system:
         "You grade whether an assistant's answer is fully supported by the provided policy sources. " +

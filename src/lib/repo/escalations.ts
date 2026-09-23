@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { DecisionReason } from "../guardrails/decide";
-import type { DetectedIntent } from "../types";
+import type { DetectedIntent, EscalationDelivery } from "../types";
 
 /** Escalation — an unknown/sensitive question relayed to staff (analysis/01 §2.3). */
 export interface Escalation {
@@ -14,6 +14,11 @@ export interface Escalation {
   answered_by: string | null;
   answered_at: string | null;
   promoted_policy_id: string | null;
+  /** live = SSE relay into an open thread; email = async follow-up (analysis/11 §4.3). */
+  delivery: EscalationDelivery;
+  contact_name: string | null;
+  contact_email: string | null;
+  delivered_at: string | null;
   created_at: string;
 }
 
@@ -23,6 +28,8 @@ export interface EscalationInput {
   question: string;
   detected_intent: DetectedIntent;
   reason: DecisionReason;
+  /** Defaults to "live"; "email" when the desk is Away (analysis/11 §4.3). */
+  delivery?: EscalationDelivery;
 }
 
 /** Create a waiting escalation for the live-relay queue (M4 answers it). */
@@ -33,11 +40,31 @@ export function createEscalation(
   const created_at = new Date().toISOString();
   db.prepare(
     `INSERT INTO escalations
-       (id, interaction_id, question, detected_intent, reason, status, created_at)
+       (id, interaction_id, question, detected_intent, reason, status, delivery, created_at)
      VALUES
-       (@id, @interaction_id, @question, @detected_intent, @reason, 'waiting', @created_at)`,
-  ).run({ ...input, created_at });
+       (@id, @interaction_id, @question, @detected_intent, @reason, 'waiting', @delivery, @created_at)`,
+  ).run({ ...input, delivery: input.delivery ?? "live", created_at });
   return getEscalation(db, input.id)!;
+}
+
+/** Store the parent's contact for an Away email follow-up (analysis/11 §4.3). */
+export function setEscalationContact(
+  db: Database,
+  input: { id: string; contact_name: string; contact_email: string },
+): void {
+  db.prepare(
+    `UPDATE escalations
+        SET contact_name = @contact_name, contact_email = @contact_email
+      WHERE id = @id`,
+  ).run(input);
+}
+
+/** Mark an email follow-up delivered (simulated send succeeded) — analysis/11 §4.4. */
+export function markEscalationDelivered(db: Database, id: string): void {
+  db.prepare(`UPDATE escalations SET delivered_at = @delivered_at WHERE id = @id`).run({
+    id,
+    delivered_at: new Date().toISOString(),
+  });
 }
 
 export function getEscalation(db: Database, id: string): Escalation | null {

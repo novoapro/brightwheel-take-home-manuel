@@ -17,7 +17,7 @@ import type { Database } from "better-sqlite3";
  * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
  * boot and in tests against a fresh :memory: database.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 7;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   id              TEXT PRIMARY KEY,
   session_id      TEXT NOT NULL,
   started_at      TEXT NOT NULL,
-  active_provider TEXT NOT NULL DEFAULT 'claude' CHECK (active_provider IN ('claude','gemini'))
+  active_provider TEXT NOT NULL DEFAULT 'anthropic' CHECK (active_provider IN ('anthropic','openai','google'))
 );
 
 -- interaction_audit: one immutable record per parent turn (analysis/05 §2)
@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS escalations (
   answered_by        TEXT,
   answered_at        TEXT,
   promoted_policy_id TEXT REFERENCES policies(id),   -- the capture edge
+  -- delivery mode + captured contact for off-hours async follow-up (analysis/11 §4.3)
+  delivery           TEXT NOT NULL DEFAULT 'live' CHECK (delivery IN ('live','email')),
+  contact_name       TEXT,
+  contact_email      TEXT,
+  delivered_at       TEXT,
   question_embedding BLOB,                            -- reserved, unpopulated in v1
   created_at         TEXT NOT NULL
 );
@@ -135,7 +140,25 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_i
 CREATE TABLE IF NOT EXISTS settings (
   id              INTEGER PRIMARY KEY CHECK (id = 1),
   caution_level   TEXT NOT NULL DEFAULT 'balanced' CHECK (caution_level IN ('cautious','balanced','lean')),
-  active_provider TEXT NOT NULL DEFAULT 'claude' CHECK (active_provider IN ('claude','gemini'))
+  active_provider TEXT NOT NULL DEFAULT 'anthropic' CHECK (active_provider IN ('anthropic','openai','google')),
+  -- availability + on-duty operator identity (analysis/11 §4)
+  availability    TEXT NOT NULL DEFAULT 'online' CHECK (availability IN ('online','away')),
+  operator_name   TEXT NOT NULL DEFAULT '',
+  away_message    TEXT NOT NULL DEFAULT '',
+  offline_at      TEXT                              -- ISO auto-offline time, or NULL (never)
+);
+
+-- provider_credentials: per-provider API key (encrypted) + model choice (analysis/11 §3.6).
+-- Keys isolated from general settings for clear security scoping; ciphertext only,
+-- never plaintext. The seed ships none.
+CREATE TABLE IF NOT EXISTS provider_credentials (
+  provider       TEXT PRIMARY KEY CHECK (provider IN ('anthropic','openai','google')),
+  key_ciphertext TEXT,                              -- base64(iv‖authTag‖ciphertext) AES-256-GCM, nullable
+  key_hint       TEXT,                              -- "…7f3a" for the UI
+  answerer_model TEXT,                              -- chosen model id
+  judge_model    TEXT,                              -- chosen judge id (defaulted)
+  valid          INTEGER,                           -- 1/0/null from the liveness check
+  last_checked   TEXT
 );
 `;
 

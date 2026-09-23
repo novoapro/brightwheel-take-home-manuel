@@ -16,7 +16,7 @@ beforeEach(() => {
 
 function convo(): string {
   const id = randomUUID();
-  createConversation(db, { id, session_id: "s1", active_provider: "claude" });
+  createConversation(db, { id, session_id: "s1", active_provider: "anthropic" });
   return id;
 }
 

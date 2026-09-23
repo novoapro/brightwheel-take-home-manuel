@@ -16,10 +16,13 @@ function fakeAi(text: string, capture?: (args: unknown) => void): GoogleGenAI {
   } as unknown as GoogleGenAI;
 }
 
+/** Construct the adapter around a fake GoogleGenAI client (config seam). */
+const M = (ai: GoogleGenAI) => new GeminiFrontDeskModel({ ai });
+
 describe("getModel factory", () => {
   it("returns the right implementation per provider", () => {
-    expect(getModel("gemini")).toBeInstanceOf(GeminiFrontDeskModel);
-    expect(getModel("claude")).toBeInstanceOf(ClaudeFrontDeskModel);
+    expect(getModel("google")).toBeInstanceOf(GeminiFrontDeskModel);
+    expect(getModel("anthropic")).toBeInstanceOf(ClaudeFrontDeskModel);
     expect(getModel()).toBeInstanceOf(ClaudeFrontDeskModel);
   });
 });
@@ -35,13 +38,13 @@ describe("GeminiFrontDeskModel adapter", () => {
       answer_intent: "answer",
       parent_message: "We're open 7 to 6.",
     });
-    const model = new GeminiFrontDeskModel(fakeAi(json));
+    const model = M(fakeAi(json));
     const r = await model.groundedAnswer({ system: "sys", messages: [{ role: "user", content: "hours?" }] });
     expect(r.sensitive_category).toBeNull();
     expect(r.intent).toBe("hours");
     expect(r.grounding_confidence).toBe(0.92);
     expect(r.citations).toEqual(["hours.regular"]);
-    expect(model.provider).toBe("gemini");
+    expect(model.provider).toBe("google");
   });
 
   it("preserves a real sensitive category", async () => {
@@ -49,7 +52,7 @@ describe("GeminiFrontDeskModel adapter", () => {
       intent: "health", is_case_specific: true, sensitive_category: "health",
       grounding_confidence: 0.9, citations: [], answer_intent: "escalate", parent_message: "Checking with our team.",
     });
-    const r = await new GeminiFrontDeskModel(fakeAi(json)).groundedAnswer({ system: "s", messages: [] });
+    const r = await M(fakeAi(json)).groundedAnswer({ system: "s", messages: [] });
     expect(r.sensitive_category).toBe("health");
     expect(r.answer_intent).toBe("escalate");
   });
@@ -60,7 +63,7 @@ describe("GeminiFrontDeskModel adapter", () => {
       intent: "hours", is_case_specific: false, sensitive_category: "none",
       grounding_confidence: 1, citations: ["hours.regular"], answer_intent: "answer", parent_message: "ok",
     });
-    const model = new GeminiFrontDeskModel(fakeAi(json, (a) => (sent = a as typeof sent)));
+    const model = M(fakeAi(json, (a) => (sent = a as typeof sent)));
     await model.groundedAnswer({
       system: "SYSTEM PREFIX",
       messages: [{ role: "user", content: "q1" }, { role: "assistant", content: "a1" }],
@@ -75,16 +78,16 @@ describe("GeminiFrontDeskModel adapter", () => {
 
   it("throws on empty or non-JSON output", async () => {
     await expect(
-      new GeminiFrontDeskModel(fakeAi("")).groundedAnswer({ system: "s", messages: [] }),
+      M(fakeAi("")).groundedAnswer({ system: "s", messages: [] }),
     ).rejects.toThrow(/empty/i);
     await expect(
-      new GeminiFrontDeskModel(fakeAi("not json")).groundedAnswer({ system: "s", messages: [] }),
+      M(fakeAi("not json")).groundedAnswer({ system: "s", messages: [] }),
     ).rejects.toThrow(/non-JSON/i);
   });
 
   it("parses judge scores", async () => {
     const json = JSON.stringify({ groundedness: 0.88, answer_relevancy: 0.91 });
-    const r = await new GeminiFrontDeskModel(fakeAi(json)).judgeGroundedness({
+    const r = await M(fakeAi(json)).judgeGroundedness({
       question: "q", answer: "a", citedPolicies: [],
     });
     expect(r).toEqual({ groundedness: 0.88, answer_relevancy: 0.91 });

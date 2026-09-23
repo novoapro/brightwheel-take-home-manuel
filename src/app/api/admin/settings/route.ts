@@ -1,37 +1,74 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
-import { getSettings, updateSettings } from "@/lib/repo/settings";
-import type { CautionLevel, Provider } from "@/lib/types";
+import { getSettings, resolveAvailability, updateSettings } from "@/lib/repo/settings";
+import { AWAY_MESSAGE_MAX, OPERATOR_NAME_MAX } from "@/lib/types";
+import type { Availability, CautionLevel, Provider, Settings } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CAUTIONS: CautionLevel[] = ["cautious", "balanced", "lean"];
-const PROVIDERS: Provider[] = ["claude", "gemini"];
+const PROVIDERS: Provider[] = ["anthropic", "openai", "google"];
+const AVAILABILITIES: Availability[] = ["online", "away"];
 
-/** Read operator settings — caution level + active provider (analysis/04 §2). */
+/** Read operator settings — caution, provider, availability + operator (analysis/04 §2, 11 §4). */
 export function GET(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
-  return NextResponse.json({ ok: true, settings: getSettings(getDb()) });
+  // resolveAvailability applies any elapsed auto-offline schedule (analysis/11 §4.1).
+  return NextResponse.json({ ok: true, settings: resolveAvailability(getDb()) });
 }
 
-/** Update the caution dial and/or provider. HARD_SENSITIVE stays floor-locked. */
+/** Update the caution dial, provider, and/or availability. HARD_SENSITIVE stays floor-locked. */
 export async function PUT(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
   const body = (await request.json()) as Record<string, unknown>;
-  const patch: { caution_level?: CautionLevel; active_provider?: Provider } = {};
+  const patch: Partial<Settings> = {};
   if (CAUTIONS.includes(body.caution_level as CautionLevel)) {
     patch.caution_level = body.caution_level as CautionLevel;
   }
   if (PROVIDERS.includes(body.active_provider as Provider)) {
     patch.active_provider = body.active_provider as Provider;
   }
+  if (AVAILABILITIES.includes(body.availability as Availability)) {
+    patch.availability = body.availability as Availability;
+  }
+  if (typeof body.operator_name === "string") {
+    patch.operator_name = body.operator_name.trim().slice(0, OPERATOR_NAME_MAX);
+  }
+  if (typeof body.away_message === "string") {
+    patch.away_message = body.away_message.trim().slice(0, AWAY_MESSAGE_MAX);
+  }
+  // offline_at: null = never; an ISO string = auto-flip to Away at that time.
+  if (body.offline_at === null) {
+    patch.offline_at = null;
+  } else if (typeof body.offline_at === "string") {
+    const t = Date.parse(body.offline_at);
+    if (!Number.isNaN(t)) patch.offline_at = new Date(t).toISOString();
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json(
-      { ok: false, error: "Nothing valid to update (caution_level / active_provider)." },
+      {
+        ok: false,
+        error:
+          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message).",
+      },
       { status: 400 },
     );
   }
+
+  // Invariant: the desk is never Online anonymously — a name is required to go
+  // Online (analysis/11 §4.1). Enforced here, not just in the UI.
+  const current = getSettings(getDb());
+  const nextAvailability = patch.availability ?? current.availability;
+  const nextOperator =
+    patch.operator_name !== undefined ? patch.operator_name : current.operator_name;
+  if (nextAvailability === "online" && !nextOperator) {
+    return NextResponse.json(
+      { ok: false, error: "A name is required to go Online." },
+      { status: 400 },
+    );
+  }
+
   return NextResponse.json({ ok: true, settings: updateSettings(getDb(), patch) });
 }

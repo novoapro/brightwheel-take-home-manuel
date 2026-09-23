@@ -13,6 +13,13 @@ export type CenterBrand = {
   welcomeMessage?: string;
 };
 
+/** Live availability + who's on duty, server-provided (analysis/11 §4). */
+export type Presence = {
+  availability: "online" | "away";
+  operatorName: string;
+  awayMessage?: string;
+};
+
 const DEFAULT_WELCOME =
   "Hi! I can help with **hours, tuition, sick-day policy, meals, and tours** — with answers straight from our center. What can I help you with?";
 
@@ -38,6 +45,10 @@ type ChatMessage = {
   answeredBy?: string;
   pending?: boolean;
   relayPending?: boolean;
+  /** "email" = Away follow-up: show a contact-capture form, not a live wait. */
+  delivery?: "live" | "email";
+  contactDone?: boolean;
+  contactEmail?: string;
   feedback?: "up" | "down";
 };
 
@@ -52,7 +63,13 @@ const STARTERS = [
 const SESSION_KEY = "la_frontdesk_session";
 const uid = () => Math.random().toString(36).slice(2);
 
-export default function FrontDesk({ center }: { center: CenterBrand }) {
+export default function FrontDesk({
+  center,
+  presence,
+}: {
+  center: CenterBrand;
+  presence?: Presence;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -153,7 +170,10 @@ export default function FrontDesk({ center }: { center: CenterBrand }) {
                 interactionId: data.interactionId,
                 decision: data.decision,
                 escalationId: data.message.escalationId,
-                relayPending: data.decision === "relayed",
+                delivery: data.message.delivery ?? undefined,
+                // Live relays wait on SSE; Away (email) waits on the contact form.
+                relayPending:
+                  data.decision === "relayed" && data.message.delivery === "live",
               }
             : msg,
         ),
@@ -190,6 +210,26 @@ export default function FrontDesk({ center }: { center: CenterBrand }) {
     }
   }
 
+  // Away follow-up: parent leaves an email so staff can reply asynchronously
+  // (analysis/11 §4.3). On success the form collapses into a confirmation.
+  async function submitContact(msg: ChatMessage, name: string, email: string) {
+    if (!msg.escalationId) return;
+    const res = await fetch("/api/relay/contact", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ escalationId: msg.escalationId, name, email }),
+    });
+    const data = await res.json().catch(() => ({ ok: false }));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error ?? "Could not save your email.");
+    }
+    setMessages((m) =>
+      m.map((x) =>
+        x.key === msg.key ? { ...x, contactDone: true, contactEmail: email } : x,
+      ),
+    );
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col md:border-x md:border-border">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -202,6 +242,8 @@ export default function FrontDesk({ center }: { center: CenterBrand }) {
           Handbook
         </a>
       </header>
+
+      {presence && <PresenceBar presence={presence} />}
 
       <div
         ref={logRef}
@@ -222,12 +264,12 @@ export default function FrontDesk({ center }: { center: CenterBrand }) {
               </div>
             </div>
           ) : (
-            <FrontDeskBubble
-              key={m.key}
-              m={m}
-              onRate={rate}
-              logo={center.logo}
-            />
+            <div key={m.key} className="flex flex-col gap-2">
+              <FrontDeskBubble m={m} onRate={rate} logo={center.logo} />
+              {m.delivery === "email" && (
+                <AwayContactForm m={m} onSubmit={submitContact} />
+              )}
+            </div>
           ),
         )}
       </div>
@@ -292,6 +334,106 @@ function Welcome({ onPick, welcome }: { onPick: (q: string) => void; welcome: st
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The Online/Away status strip (analysis/11 §4.2). Online names the on-duty
+ * operator so the parent sees a real person is reachable; Away is honest about
+ * async follow-up. Server-rendered so there's no flash of the wrong state.
+ */
+function PresenceBar({ presence }: { presence: Presence }) {
+  if (presence.availability === "away") {
+    const note =
+      presence.awayMessage?.trim() ||
+      "I can answer common questions from our handbook. For anything I'm unsure about, leave your email and our team will follow up, usually within one business day.";
+    return (
+      <div className="border-b border-border bg-you px-4 py-2 text-xs text-muted">
+        🟡 <span className="font-medium text-foreground">Away</span> — {note}
+      </div>
+    );
+  }
+  const who = presence.operatorName
+    ? `${presence.operatorName} is at the front desk`
+    : "Online";
+  return (
+    <div className="flex items-center gap-1.5 border-b border-border bg-surface px-4 py-2 text-xs text-muted">
+      <span aria-hidden>🟢</span>
+      <span className="font-medium text-foreground">{who}</span>
+      <span>— usually replies in real time.</span>
+    </div>
+  );
+}
+
+/**
+ * Away follow-up capture (analysis/11 §4.3): the parent leaves an email so staff
+ * can reply asynchronously. Honest provenance — no fake "live" cue. Collapses to
+ * a confirmation on submit.
+ */
+function AwayContactForm({
+  m,
+  onSubmit,
+}: {
+  m: ChatMessage;
+  onSubmit: (m: ChatMessage, name: string, email: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+
+  if (m.contactDone) {
+    return (
+      <div className="ml-8 rounded-xl border border-brand/30 bg-brand/5 px-3 py-2 text-xs text-brand-strong">
+        ✓ Thanks! We&apos;ll email you at {m.contactEmail} — usually within one
+        business day.
+      </div>
+    );
+  }
+
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    setErr(undefined);
+    try {
+      await onSubmit(m, name.trim(), email.trim());
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="ml-8 flex flex-col gap-2 rounded-xl border border-border bg-surface px-3 py-3">
+      <p className="text-xs font-medium text-muted">Where should we send the answer?</p>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Your name (optional)"
+        aria-label="Your name"
+        maxLength={120}
+        className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
+      />
+      <input
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        type="email"
+        inputMode="email"
+        placeholder="you@example.com"
+        aria-label="Your email"
+        maxLength={120}
+        className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
+      />
+      <button
+        onClick={submit}
+        disabled={busy || !email.trim()}
+        className="rounded-lg bg-brand px-4 py-2 text-sm text-brand-fg disabled:opacity-40"
+      >
+        {busy ? "Saving…" : "Send me the answer"}
+      </button>
+      {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
 }

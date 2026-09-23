@@ -12,7 +12,7 @@ import type {
 
 /** A fake model so orchestration is tested with zero network / API cost. */
 class FakeModel implements FrontDeskModel {
-  readonly provider = "claude" as const;
+  readonly provider = "anthropic" as const;
   readonly answererModel = "fake-answerer";
   lastSystem = "";
   constructor(
@@ -49,7 +49,7 @@ describe("ask (orchestration)", () => {
     expect(r.decision).toBe("answered");
     expect(r.reason).toBe("grounded");
     expect(r.citations).toEqual(["hours.late_pickup"]);
-    expect(r.provider).toBe("claude");
+    expect(r.provider).toBe("anthropic");
     expect(r.model).toBe("fake-answerer");
   });
 

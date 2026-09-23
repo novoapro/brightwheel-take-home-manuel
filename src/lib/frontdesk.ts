@@ -34,7 +34,7 @@ export async function ask(db: Database, input: AskInput): Promise<AskResult> {
   }
   const publishedPolicies = listPublishedPolicies(db);
   const settings = getSettings(db);
-  const model = input.model ?? getModel(settings.active_provider);
+  const model = input.model ?? getModel(settings.active_provider, db);
 
   const system = buildSystemPrefix(center, publishedPolicies);
   const messages: Msg[] = [

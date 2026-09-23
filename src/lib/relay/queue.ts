@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import { getAudit } from "../repo/audit";
 import { listWaitingEscalations } from "../repo/escalations";
 import { getPolicy } from "../repo/policies";
-import type { DetectedIntent } from "../types";
+import type { DetectedIntent, EscalationDelivery } from "../types";
 import { captureDefaultFor } from "./capture";
 
 /**
@@ -20,6 +20,10 @@ export interface QueueItem {
   aiReferenced: string[];
   waitingSince: string;
   captureDefault: boolean;
+  /** live = parent waiting on SSE; email = Away async follow-up (analysis/11 §4.5). */
+  delivery: EscalationDelivery;
+  contactName: string | null;
+  contactEmail: string | null;
 }
 
 export function buildRelayQueue(db: Database): QueueItem[] {
@@ -38,6 +42,9 @@ export function buildRelayQueue(db: Database): QueueItem[] {
       aiReferenced,
       waitingSince: esc.created_at,
       captureDefault: captureDefaultFor(esc.reason),
+      delivery: esc.delivery,
+      contactName: esc.contact_name,
+      contactEmail: esc.contact_email,
     };
   });
 }

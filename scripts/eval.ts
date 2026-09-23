@@ -23,7 +23,7 @@ async function main() {
     process.exit(1);
   }
 
-  const provider = (process.env.EVAL_PROVIDER as "claude" | "gemini") || "claude";
+  const provider = (process.env.EVAL_PROVIDER as "anthropic" | "google") || "anthropic";
   const db = createMemoryDb();
   seedDatabase(db);
   const model = getModel(provider);

@@ -20,7 +20,11 @@ describe("seedDatabase", () => {
     expect(getCenter(db)?.name).toMatch(/Little Acorns/);
     expect(getSettings(db)).toEqual({
       caution_level: "balanced",
-      active_provider: "claude",
+      active_provider: "anthropic",
+      availability: "online",
+      operator_name: "",
+      away_message: "",
+      offline_at: null,
     });
     expect(countPolicies(db)).toBe(POLICIES.length);
   });

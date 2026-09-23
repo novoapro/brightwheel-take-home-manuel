@@ -15,7 +15,7 @@ function audit(over: Partial<AuditMetricRow>): AuditMetricRow {
     parent_feedback: null,
     cited_count: 1,
     groundedness: null,
-    provider: "claude",
+    provider: "anthropic",
     timestamp: "2026-09-20T00:00:00Z",
     ...over,
   };
@@ -32,6 +32,10 @@ function esc(question: string, reason: string): Escalation {
     answered_by: null,
     answered_at: null,
     promoted_policy_id: null,
+    delivery: "live",
+    contact_name: null,
+    contact_email: null,
+    delivered_at: null,
     created_at: "2026-09-20T00:00:00Z",
   };
 }
@@ -93,24 +97,24 @@ describe("aggregate (pure)", () => {
   });
 
   it("slices by provider only when more than one has handled traffic", () => {
-    const single = aggregate([audit({ provider: "claude" })], [], 0, 0);
+    const single = aggregate([audit({ provider: "anthropic" })], [], 0, 0);
     expect(single.byProvider).toEqual([]);
 
     const both = aggregate(
       [
-        audit({ provider: "claude", decision: "answered", groundedness: 0.9 }),
-        audit({ provider: "claude", decision: "escalated" }),
-        audit({ provider: "gemini", decision: "answered", groundedness: 0.8 }),
+        audit({ provider: "anthropic", decision: "answered", groundedness: 0.9 }),
+        audit({ provider: "anthropic", decision: "escalated" }),
+        audit({ provider: "google", decision: "answered", groundedness: 0.8 }),
       ],
       [],
       0,
       0,
     );
-    expect(both.byProvider.map((p) => p.provider)).toEqual(["claude", "gemini"]);
-    const claude = both.byProvider.find((p) => p.provider === "claude")!;
+    expect(both.byProvider.map((p) => p.provider)).toEqual(["anthropic", "google"]);
+    const claude = both.byProvider.find((p) => p.provider === "anthropic")!;
     expect(claude.total).toBe(2);
     expect(claude.containmentRate).toBeCloseTo(0.5);
-    expect(both.byProvider.find((p) => p.provider === "gemini")!.groundedness).toBeCloseTo(0.8);
+    expect(both.byProvider.find((p) => p.provider === "google")!.groundedness).toBeCloseTo(0.8);
   });
 
   it("handles an empty log without dividing by zero", () => {

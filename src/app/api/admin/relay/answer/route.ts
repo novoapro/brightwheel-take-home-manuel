@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
 import { answerRelay } from "@/lib/relay/answer";
+import { getEmailSender } from "@/lib/email/sender";
+import { markEscalationDelivered } from "@/lib/repo/escalations";
+import { getCenter } from "@/lib/repo/center";
+import { getSettings } from "@/lib/repo/settings";
 import { INTENTS, type Intent } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -31,15 +35,36 @@ export async function POST(request: Request) {
         ? (body.captureIntent as Intent)
         : undefined;
 
+    // Attribution: the client sends the operator's name; if it's blank, fall
+    // back to the persisted on-duty operator (analysis/11 §4.5) before
+    // answerRelay's generic "Front Desk Team" safety net.
+    const bodyAnsweredBy = typeof body.answeredBy === "string" ? body.answeredBy.trim() : "";
+    const answeredBy = bodyAnsweredBy || getSettings(getDb()).operator_name;
+
     const result = answerRelay(getDb(), {
       escalationId,
       answer,
-      answeredBy: typeof body.answeredBy === "string" ? body.answeredBy : "",
+      answeredBy,
       capture,
       captureIntent,
       captureTitle: typeof body.captureTitle === "string" ? body.captureTitle : undefined,
     });
-    return NextResponse.json({ ok: true, ...result });
+
+    // Away follow-up: deliver the answer by (simulated) email instead of the SSE
+    // bus, then mark it delivered (analysis/11 §4.4). Live relays already streamed.
+    let emailed = false;
+    if (result.delivery === "email" && result.contactEmail) {
+      const center = getCenter(getDb());
+      await getEmailSender().send({
+        to: result.contactEmail,
+        subject: `A reply from ${center?.name ?? "the front desk"}`,
+        body: answer,
+      });
+      markEscalationDelivered(getDb(), escalationId);
+      emailed = true;
+    }
+
+    return NextResponse.json({ ok: true, ...result, emailed });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: (err as Error).message },

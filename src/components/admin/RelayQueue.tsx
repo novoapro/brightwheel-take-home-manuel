@@ -12,6 +12,9 @@ type QueueItem = {
   aiReferenced: string[];
   waitingSince: string;
   captureDefault: boolean;
+  delivery: "live" | "email";
+  contactName: string | null;
+  contactEmail: string | null;
 };
 
 /** The live-relay queue (analysis/03 §4.2) — reply relays to the parent live. */
@@ -102,8 +105,12 @@ function RelayCard({
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string>();
 
+  const isEmail = item.delivery === "email";
+  // An email follow-up can't be sent until the parent leaves their address.
+  const awaitingContact = isEmail && !item.contactEmail;
+
   async function send() {
-    if (!answer.trim() || sending) return;
+    if (!answer.trim() || sending || awaitingContact) return;
     setSending(true);
     setErr(undefined);
     try {
@@ -130,9 +137,15 @@ function RelayCard({
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="flex items-center gap-1.5 font-medium text-red-600">
-          <span className="animate-softpulse">🔴</span> waiting · {elapsed(item.waitingSince, now)}
-        </span>
+        {isEmail ? (
+          <span className="flex items-center gap-1.5 font-medium text-amber-700">
+            📧 email follow-up · {elapsed(item.waitingSince, now)}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 font-medium text-red-600">
+            <span className="animate-softpulse">🔴</span> waiting · {elapsed(item.waitingSince, now)}
+          </span>
+        )}
         <span className="rounded-full bg-you px-2 py-0.5 text-muted">
           {item.intent ?? "out of scope"}
           {item.isCaseSpecific ? " · case-specific" : ""}
@@ -140,6 +153,13 @@ function RelayCard({
       </div>
 
       <p className="text-[15px] font-medium">“{item.question}”</p>
+      {isEmail && (
+        <p className="mt-1 text-xs text-amber-700">
+          {item.contactEmail
+            ? `Reply goes to ${item.contactName ? `${item.contactName} · ` : ""}${item.contactEmail} (simulated).`
+            : "Waiting for the parent to leave their email…"}
+        </p>
+      )}
       {item.aiReferenced.length > 0 && (
         <p className="mt-1 text-xs text-muted">
           AI already referenced: {item.aiReferenced.join(", ")}
@@ -181,10 +201,20 @@ function RelayCard({
 
       <button
         onClick={send}
-        disabled={!answer.trim() || sending}
+        disabled={!answer.trim() || sending || awaitingContact}
         className="mt-3 w-full rounded-lg bg-brand px-4 py-2.5 text-brand-fg disabled:opacity-40"
       >
-        {sending ? "Sending…" : capture ? "Send + Publish" : "Send to parent's chat"}
+        {sending
+          ? "Sending…"
+          : awaitingContact
+            ? "Waiting for parent's email"
+            : isEmail
+              ? capture
+                ? "Send email + Publish"
+                : "Send email (simulated)"
+              : capture
+                ? "Send + Publish"
+                : "Send to parent's chat"}
       </button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
     </div>

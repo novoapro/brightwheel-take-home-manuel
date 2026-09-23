@@ -5,7 +5,8 @@ import { seedDatabase } from "../seed";
 import { handleTurn } from "../conversation";
 import { buildSystemPrefix } from "../model/prompt";
 import { getCenter } from "../repo/center";
-import { getEscalation } from "../repo/escalations";
+import { getEscalation, setEscalationContact } from "../repo/escalations";
+import { updateSettings } from "../repo/settings";
 import { getPolicy, listPublishedPolicies } from "../repo/policies";
 import { listMessages } from "../repo/messages";
 import { isAdmin } from "../admin";
@@ -21,7 +22,7 @@ import type {
 } from "../model/types";
 
 class FakeModel implements FrontDeskModel {
-  readonly provider = "claude" as const;
+  readonly provider = "anthropic" as const;
   readonly answererModel = "fake-answerer";
   constructor(private result: GroundedResult) {}
   async groundedAnswer(_input: GroundedAnswerInput): Promise<GroundedResult> {
@@ -165,6 +166,77 @@ describe("answerRelay — the live relay loop", () => {
     expect(() =>
       answerRelay(db, { escalationId: turn.message.escalationId!, answer: "again", answeredBy: "M" }),
     ).toThrow(/already/i);
+  });
+});
+
+describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3)", () => {
+  it("relays as an email follow-up (not live) with an honest holding message", async () => {
+    updateSettings(db, { availability: "away" });
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+
+    expect(turn.decision).toBe("relayed");
+    expect(turn.message.delivery).toBe("email");
+    // Honest holding text — no "real time" cue; pairs with the contact form.
+    expect(turn.message.text).toMatch(/away right now/i);
+    expect(turn.message.text).toMatch(/email/i);
+
+    const esc = getEscalation(db, turn.message.escalationId!)!;
+    expect(esc.delivery).toBe("email");
+    expect(esc.contact_email).toBeNull();
+  });
+
+  it("grounded answers are unaffected by Away", async () => {
+    updateSettings(db, { availability: "away" });
+    const answered = (): GroundedResult => ({
+      intent: "hours",
+      is_case_specific: false,
+      sensitive_category: null,
+      grounding_confidence: 0.95,
+      citations: ["hours.regular"],
+      answer_intent: "answer",
+      parent_message: "We're open 7am–6pm.",
+    });
+    const turn = await handleTurn(db, { question: "What are your hours?", model: new FakeModel(answered()) });
+    expect(turn.decision).toBe("answered");
+    expect(turn.message.delivery).toBeNull();
+  });
+
+  it("answers an email escalation without touching the live bus", async () => {
+    updateSettings(db, { availability: "away" });
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    const escId = turn.message.escalationId!;
+    setEscalationContact(db, { id: escId, contact_name: "Sam", contact_email: "sam@example.com" });
+
+    const received: RelayEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => received.push(e));
+    const res = answerRelay(db, {
+      escalationId: escId,
+      answer: "Yes — up to 3 half-days a week.",
+      answeredBy: "Maria",
+    });
+    off();
+
+    expect(received).toHaveLength(0); // email path never publishes live
+    expect(res.delivery).toBe("email");
+    expect(res.contactEmail).toBe("sam@example.com");
+
+    // the queue surfaces the captured contact
+    const item = buildRelayQueue(db).find((q) => q.escalationId === escId);
+    // (already answered → gone from waiting queue; refetch a fresh waiting one instead)
+    expect(item).toBeUndefined();
+  });
+
+  it("surfaces delivery + captured contact in the relay queue", async () => {
+    updateSettings(db, { availability: "away" });
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    setEscalationContact(db, {
+      id: turn.message.escalationId!,
+      contact_name: "Sam",
+      contact_email: "sam@example.com",
+    });
+    const item = buildRelayQueue(db).find((q) => q.escalationId === turn.message.escalationId);
+    expect(item?.delivery).toBe("email");
+    expect(item?.contactEmail).toBe("sam@example.com");
   });
 });
 

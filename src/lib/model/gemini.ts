@@ -64,13 +64,25 @@ const JUDGE_SCHEMA = {
   propertyOrdering: ["groundedness", "answer_relevancy"],
 };
 
+export interface GeminiConfig {
+  apiKey?: string;
+  answererModel?: string;
+  judgeModel?: string;
+  ai?: GoogleGenAI;
+}
+
 export class GeminiFrontDeskModel implements FrontDeskModel {
-  readonly provider = "gemini" as const;
-  readonly answererModel = GEMINI_ANSWERER_MODEL;
+  readonly provider = "google" as const;
+  readonly answererModel: string;
+  private readonly judgeModel: string;
   private ai: GoogleGenAI;
 
-  constructor(ai?: GoogleGenAI) {
-    this.ai = ai ?? new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
+  constructor(config: GeminiConfig = {}) {
+    // Explicit key from decrypted DB creds; else env GOOGLE_API_KEY (fallback).
+    this.ai =
+      config.ai ?? new GoogleGenAI({ apiKey: config.apiKey ?? process.env.GOOGLE_API_KEY });
+    this.answererModel = config.answererModel ?? GEMINI_ANSWERER_MODEL;
+    this.judgeModel = config.judgeModel ?? GEMINI_JUDGE_MODEL;
   }
 
   async groundedAnswer(input: GroundedAnswerInput): Promise<GroundedResult> {
@@ -80,7 +92,7 @@ export class GeminiFrontDeskModel implements FrontDeskModel {
     }));
 
     const response = await this.ai.models.generateContent({
-      model: GEMINI_ANSWERER_MODEL,
+      model: this.answererModel,
       contents,
       config: {
         systemInstruction: input.system,
@@ -111,7 +123,7 @@ export class GeminiFrontDeskModel implements FrontDeskModel {
       .join("\n\n");
 
     const response = await this.ai.models.generateContent({
-      model: GEMINI_JUDGE_MODEL,
+      model: this.judgeModel,
       contents: [
         { role: "user", parts: [{ text: `QUESTION:\n${input.question}\n\nANSWER:\n${input.answer}\n\nSOURCES:\n${sources}` }] },
       ],

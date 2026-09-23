@@ -11,23 +11,42 @@ import type { Settings } from "../types";
 
 const DEFAULTS: Settings = {
   caution_level: "balanced",
-  active_provider: "claude",
+  active_provider: "anthropic",
+  availability: "online",
+  operator_name: "",
+  away_message: "",
+  offline_at: null,
 };
 
 /** Read settings, creating the single row with defaults if absent. */
 export function getSettings(db: Database): Settings {
   const row = db
     .prepare(
-      `SELECT caution_level, active_provider FROM settings WHERE id = 1`,
+      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at
+         FROM settings WHERE id = 1`,
     )
     .get() as Settings | undefined;
   if (row) return row;
 
   db.prepare(
-    `INSERT INTO settings (id, caution_level, active_provider)
-     VALUES (1, @caution_level, @active_provider)`,
+    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at)
+     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at)`,
   ).run(DEFAULTS);
   return { ...DEFAULTS };
+}
+
+/**
+ * Settings with the auto-offline schedule applied (analysis/11 §4.1). If the
+ * desk is Online and its `offline_at` time has passed, flip it to Away and clear
+ * the schedule — resolved lazily on read, so no background scheduler is needed
+ * on the single container. Every availability consumer reads through this.
+ */
+export function resolveAvailability(db: Database): Settings {
+  const s = getSettings(db);
+  if (s.availability === "online" && s.offline_at && Date.now() >= Date.parse(s.offline_at)) {
+    return updateSettings(db, { availability: "away", offline_at: null });
+  }
+  return s;
 }
 
 /** Patch one or more settings fields; returns the updated settings. */
@@ -40,7 +59,11 @@ export function updateSettings(
   db.prepare(
     `UPDATE settings
         SET caution_level = @caution_level,
-            active_provider = @active_provider
+            active_provider = @active_provider,
+            availability = @availability,
+            operator_name = @operator_name,
+            away_message = @away_message,
+            offline_at = @offline_at
       WHERE id = 1`,
   ).run(next);
   return next;

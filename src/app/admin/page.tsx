@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Dashboard from "@/components/admin/Dashboard";
 import HandbookEditor from "@/components/admin/HandbookEditor";
 import RelayQueue from "@/components/admin/RelayQueue";
@@ -88,6 +88,8 @@ export default function AdminPage() {
   const [passcode, setPasscode] = useState("");
   const [authCode, setAuthCode] = useState<string>();
   const [operatorName, setOperatorName] = useState("");
+  const [availability, setAvailability] = useState<"online" | "away">("online");
+  const [offlineAt, setOfflineAt] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [tab, setTab] = useState<Tab>("dashboard");
   // Start closed so mobile never flashes the overlay open before the mount
@@ -124,6 +126,42 @@ export default function AdminPage() {
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
   const openNav = () => setCollapsed(false);
   const closeNav = () => setCollapsed(true);
+
+  // Load the persisted on-duty operator + availability once signed in, so the
+  // operator's name survives reloads and is consistent across devices
+  // (analysis/11 §4.1) — no more re-typing every session.
+  useEffect(() => {
+    if (!authCode) return;
+    fetch("/api/admin/settings", { headers: { "x-admin-passcode": authCode } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) return;
+        setOperatorName(d.settings.operator_name ?? "");
+        setAvailability(d.settings.availability ?? "online");
+        setOfflineAt(d.settings.offline_at ?? null);
+      })
+      .catch(() => {});
+  }, [authCode]);
+
+  // Persist a presence change (name / availability / auto-offline). Returns the
+  // server error, if any, so the caller can surface "a name is required".
+  async function savePresence(patch: {
+    operator_name?: string;
+    availability?: "online" | "away";
+    offline_at?: string | null;
+  }): Promise<string | undefined> {
+    const res = await fetch("/api/admin/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-admin-passcode": authCode! },
+      body: JSON.stringify(patch),
+    });
+    const d = await res.json().catch(() => ({ ok: false }));
+    if (!res.ok || !d.ok) return d.error ?? "Could not save.";
+    setOperatorName(d.settings.operator_name);
+    setAvailability(d.settings.availability);
+    setOfflineAt(d.settings.offline_at ?? null);
+    return undefined;
+  }
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -265,12 +303,11 @@ export default function AdminPage() {
               </h1>
             </div>
           </div>
-          <input
-            value={operatorName}
-            onChange={(e) => setOperatorName(e.target.value)}
-            placeholder="Your name"
-            aria-label="Your name"
-            className="w-40 shrink-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand sm:w-56"
+          <PresenceControl
+            availability={availability}
+            operatorName={operatorName}
+            offlineAt={offlineAt}
+            onSave={savePresence}
           />
         </header>
 
@@ -286,6 +323,282 @@ export default function AdminPage() {
 
         {collapsed && <PoweredByBrightwheel />}
       </section>
+    </div>
+  );
+}
+
+/** Format an ISO time as a short local clock time, e.g. "5:00 PM". */
+function shortTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * The operator presence control in the admin header (analysis/11 §4.2a).
+ *   Away  → a single prominent "Open Front Desk" CTA.
+ *   Online → a status pill (🟢 name · until 5:00 PM) + "Close" + "Edit".
+ * Opening the desk goes through a dialog (name + auto-offline schedule); a name
+ * is required, so the desk is never open anonymously, and it persists so every
+ * live answer is attributed to a real person.
+ */
+function PresenceControl({
+  availability,
+  operatorName,
+  offlineAt,
+  onSave,
+}: {
+  availability: "online" | "away";
+  operatorName: string;
+  offlineAt: string | null;
+  onSave: (patch: {
+    operator_name?: string;
+    availability?: "online" | "away";
+    offline_at?: string | null;
+  }) => Promise<string | undefined>;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const online = availability === "online";
+
+  // One consistent pill for both states — same shape/border/background, only the
+  // color and content change. Clicking it always opens the dialog.
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setDialogOpen(true)}
+        title={online ? "Edit who's on duty, or close the desk" : "Open the Front Desk"}
+        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+          online
+            ? "border-green-600/30 bg-green-600/10 text-green-800 hover:bg-green-600/15"
+            : "border-amber-500/40 bg-amber-400/10 text-amber-800 hover:bg-amber-400/20"
+        }`}
+      >
+        <span className="relative flex h-2 w-2" aria-hidden>
+          {online && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500/60" />
+          )}
+          <span
+            className={`relative inline-flex h-2 w-2 rounded-full ${
+              online ? "bg-green-600" : "bg-amber-500"
+            }`}
+          />
+        </span>
+        {online ? (
+          <>
+            <span>{operatorName || "Online"}</span>
+            {offlineAt && (
+              <span className="hidden text-xs text-green-700/80 sm:inline">
+                · until {shortTime(offlineAt)}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <span>Away</span>
+            <span className="text-xs text-amber-700/80">· Open Front Desk</span>
+          </>
+        )}
+      </button>
+
+      {dialogOpen && (
+        <OpenDeskDialog
+          online={online}
+          initialName={operatorName}
+          initialOfflineAt={online ? offlineAt : null}
+          onClose={() => setDialogOpen(false)}
+          onSave={onSave}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Modal to open (or edit) the Front Desk: the operator's name plus an auto-
+ * offline schedule — a specific time today, or never. Submitting sets the desk
+ * Online under that name (analysis/11 §4.1).
+ */
+function OpenDeskDialog({
+  online,
+  initialName,
+  initialOfflineAt,
+  onClose,
+  onSave,
+}: {
+  online: boolean;
+  initialName: string;
+  initialOfflineAt: string | null;
+  onClose: () => void;
+  onSave: (patch: {
+    operator_name?: string;
+    availability?: "online" | "away";
+    offline_at?: string | null;
+  }) => Promise<string | undefined>;
+}) {
+  const [name, setName] = useState(initialName);
+  const [mode, setMode] = useState<"never" | "at">(initialOfflineAt ? "at" : "never");
+  const [time, setTime] = useState<string>(() =>
+    initialOfflineAt
+      ? new Date(initialOfflineAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+      : "17:00",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Interpret "HH:MM" as the next occurrence of that clock time (today, or
+  // tomorrow if it has already passed) → an ISO instant.
+  function offlineIso(): string | null {
+    if (mode === "never") return null;
+    const [h, m] = time.split(":").map(Number);
+    const at = new Date();
+    at.setHours(h, m, 0, 0);
+    if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+    return at.toISOString();
+  }
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Please enter the operator's name.");
+      nameRef.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    const err = await onSave({
+      availability: "online",
+      operator_name: trimmed,
+      offline_at: offlineIso(),
+    });
+    setBusy(false);
+    if (err) setError(err);
+    else onClose();
+  }
+
+  async function closeDesk() {
+    setBusy(true);
+    setError(undefined);
+    const err = await onSave({ availability: "away", offline_at: null });
+    setBusy(false);
+    if (err) setError(err);
+    else onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4 backdrop-blur-[1px]"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Open the Front Desk"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl"
+      >
+        <h2 className="text-base font-semibold">Front desk</h2>
+        <p className="mt-1 text-xs text-muted">
+          {online
+            ? "Open, and you're shown as the person answering. Mark it as away to make changes."
+            : "You'll be shown as the person answering. Parents see you're online."}
+        </p>
+
+        {online ? (
+          // Read-only while open — the on-duty name is locked (§4.2a). To change
+          // it, mark the desk as away first, then open again.
+          <dl className="mt-4 space-y-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">On duty</dt>
+              <dd className="font-medium">{name || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Auto-offline</dt>
+              <dd className="font-medium">
+                {initialOfflineAt ? shortTime(initialOfflineAt) : "Never"}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <>
+            <label className="mt-4 block text-xs font-medium text-muted" htmlFor="op-name">
+              Operator name
+            </label>
+            <input
+              id="op-name"
+              ref={nameRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && mode === "never" && submit()}
+              placeholder="e.g. Maria"
+              maxLength={60}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
+            />
+
+            <fieldset className="mt-4">
+              <legend className="text-xs font-medium text-muted">Automatically go offline</legend>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="offline-mode"
+                  checked={mode === "never"}
+                  onChange={() => setMode("never")}
+                />
+                Never — I&apos;ll close the desk myself
+              </label>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="offline-mode"
+                  checked={mode === "at"}
+                  onChange={() => setMode("at")}
+                />
+                Go offline at
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => {
+                    setTime(e.target.value);
+                    setMode("at");
+                  }}
+                  className="rounded-lg border border-border bg-background px-2 py-1 text-sm outline-none focus:border-brand"
+                />
+              </label>
+            </fieldset>
+          </>
+        )}
+
+        {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={online ? closeDesk : submit}
+            disabled={busy}
+            className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 ${
+              online
+                ? "border border-border text-foreground hover:border-red-400 hover:text-red-600"
+                : "bg-brand text-brand-fg"
+            }`}
+          >
+            {busy ? "Saving…" : online ? "Mark as away" : "Mark as active"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
