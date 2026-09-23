@@ -9,7 +9,7 @@ import {
 } from "./repo/conversations";
 import { createEscalation } from "./repo/escalations";
 import { appendMessage, listMessages } from "./repo/messages";
-import { getPolicy } from "./repo/policies";
+import { getEntry } from "./repo/knowledge";
 import { publishQueueCount } from "./relay/queue";
 import { resolveAvailability } from "./repo/settings";
 import type { EscalationDelivery } from "./types";
@@ -62,7 +62,7 @@ export interface HandleTurnInput {
 
 function citationsOf(db: Database, ids: string[]): Citation[] {
   return ids.flatMap((id) => {
-    const p = getPolicy(db, id);
+    const p = getEntry(db, id);
     return p ? [{ id: p.id, title: p.title, source: p.source }] : [];
   });
 }

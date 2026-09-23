@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { INTENTS, type Intent } from "@/lib/types";
 
-type Policy = {
+type Entry = {
   id: string;
   intent: Intent;
   title: string;
@@ -11,7 +11,7 @@ type Policy = {
   structured: Record<string, unknown>;
   keywords: string[];
   sensitivity: "none" | "sensitive";
-  status: "published" | "draft";
+  status: "published" | "draft" | "unpublished";
   origin: "seed" | "captured";
   source: string | null;
 };
@@ -24,29 +24,46 @@ type Draft = {
   structuredText: string;
   keywords: string;
   sensitivity: "none" | "sensitive";
-  status: "published" | "draft";
+  status: "published" | "draft" | "unpublished";
   source: string;
 };
 
-/** Source-of-truth editor (analysis/03 §4.3) — edit prose AND structured data. */
-export default function HandbookEditor({
+const STATUS_LABEL: Record<Draft["status"], string> = {
+  published: "✓ pub",
+  draft: "draft",
+  unpublished: "unpublished",
+};
+
+/** Knowledge Base editor (analysis/03 §4.3) — the operator-curated source of truth.
+ *  The handbook is one source that feeds it; captured front-desk answers are another. */
+export default function KnowledgeBaseEditor({
   passcode,
   operatorName,
 }: {
   passcode: string;
   operatorName: string;
 }) {
-  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [intents, setIntents] = useState<string[]>([...INTENTS]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [addingCategory, setAddingCategory] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string>();
 
+  const NEW_CATEGORY = "__new__";
+
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/policies", {
+    const res = await fetch("/api/admin/knowledge", {
       headers: { "x-admin-passcode": passcode },
     });
     const data = await res.json();
-    if (data.ok) setPolicies(data.policies);
+    if (data.ok) {
+      setEntries(data.entries);
+      if (Array.isArray(data.intents) && data.intents.length) {
+        setIntents(data.intents);
+      }
+    }
   }, [passcode]);
 
   useEffect(() => {
@@ -54,8 +71,9 @@ export default function HandbookEditor({
     refresh();
   }, [refresh]);
 
-  function editExisting(p: Policy) {
+  function editExisting(p: Entry) {
     setError(undefined);
+    setAddingCategory(false);
     setDraft({
       id: p.id,
       intent: p.intent,
@@ -69,10 +87,11 @@ export default function HandbookEditor({
     });
   }
 
-  function newPolicy() {
+  function newEntry() {
     setError(undefined);
+    setAddingCategory(false);
     setDraft({
-      intent: "hours",
+      intent: intents[0] ?? "hours",
       title: "",
       body_md: "",
       structuredText: "{}",
@@ -88,7 +107,7 @@ export default function HandbookEditor({
     setSaving(true);
     setError(undefined);
     try {
-      const res = await fetch("/api/admin/policies", {
+      const res = await fetch("/api/admin/knowledge", {
         method: draft.id ? "PUT" : "POST",
         headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({
@@ -115,7 +134,42 @@ export default function HandbookEditor({
     }
   }
 
+  async function remove() {
+    if (!draft?.id) return;
+    if (
+      !window.confirm(
+        `Delete "${draft.title}" from the knowledge base? This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(undefined);
+    try {
+      const res = await fetch("/api/admin/knowledge", {
+        method: "DELETE",
+        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? "Delete failed.");
+      setDraft(null);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (draft) {
+    const saveLabel = saving
+      ? "Saving…"
+      : draft.status === "published"
+        ? "Publish"
+        : draft.status === "unpublished"
+          ? "Save (unpublished)"
+          : "Save draft";
     return (
       <div className="flex flex-col gap-3">
         <button onClick={() => setDraft(null)} className="self-start text-sm text-muted">
@@ -125,10 +179,39 @@ export default function HandbookEditor({
           <input className={inputCls} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
         </Field>
         <div className="flex gap-3">
-          <Field label="Intent">
-            <select className={inputCls} value={draft.intent} onChange={(e) => setDraft({ ...draft, intent: e.target.value as Intent })}>
-              {INTENTS.map((i) => <option key={i} value={i}>{i}</option>)}
+          <Field label="Category">
+            <select
+              className={inputCls}
+              value={addingCategory ? NEW_CATEGORY : draft.intent}
+              onChange={(e) => {
+                if (e.target.value === NEW_CATEGORY) {
+                  setAddingCategory(true);
+                  setDraft({ ...draft, intent: "" });
+                } else {
+                  setAddingCategory(false);
+                  setDraft({ ...draft, intent: e.target.value });
+                }
+              }}
+            >
+              {/* Existing categories, plus the current custom value if not listed. */}
+              {[...new Set([...intents, ...(draft.intent && !addingCategory ? [draft.intent] : [])])].map(
+                (i) => (
+                  <option key={i} value={i}>
+                    {i}
+                  </option>
+                ),
+              )}
+              <option value={NEW_CATEGORY}>+ Add new category…</option>
             </select>
+            {addingCategory && (
+              <input
+                className={`${inputCls} mt-1.5`}
+                value={draft.intent}
+                placeholder="e.g. transportation"
+                autoFocus
+                onChange={(e) => setDraft({ ...draft, intent: e.target.value })}
+              />
+            )}
           </Field>
           <Field label="Sensitivity">
             <select className={inputCls} value={draft.sensitivity} onChange={(e) => setDraft({ ...draft, sensitivity: e.target.value as "none" | "sensitive" })}>
@@ -137,12 +220,18 @@ export default function HandbookEditor({
             </select>
           </Field>
           <Field label="Status">
-            <select className={inputCls} value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as "published" | "draft" })}>
+            <select className={inputCls} value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as Draft["status"] })}>
               <option value="published">published</option>
               <option value="draft">draft</option>
+              <option value="unpublished">unpublished</option>
             </select>
           </Field>
         </div>
+        {draft.status === "unpublished" && (
+          <p className="-mt-1 text-xs text-muted">
+            Unpublished entries are kept but not served to parents.
+          </p>
+        )}
         <Field label="What parents see (markdown)">
           <textarea className={`${inputCls} min-h-28`} value={draft.body_md} onChange={(e) => setDraft({ ...draft, body_md: e.target.value })} />
         </Field>
@@ -156,23 +245,40 @@ export default function HandbookEditor({
           <input className={inputCls} value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })} />
         </Field>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button onClick={save} disabled={saving} className="rounded-lg bg-brand px-4 py-2.5 text-brand-fg disabled:opacity-40">
-          {saving ? "Saving…" : draft.status === "published" ? "Publish" : "Save draft"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={save} disabled={saving || deleting} className="rounded-lg bg-brand px-4 py-2.5 text-brand-fg disabled:opacity-40">
+            {saveLabel}
+          </button>
+          {draft.id && (
+            <button
+              onClick={remove}
+              disabled={saving || deleting}
+              className="ml-auto rounded-lg border border-red-300 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900/60 dark:hover:bg-red-950/40"
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
+  // Group by category: known categories in canonical order, then any left over.
+  const groupOrder = [
+    ...intents,
+    ...[...new Set(entries.map((e) => e.intent))].filter((i) => !intents.includes(i)),
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted">{policies.length} policies · the source of truth</p>
-        <button onClick={newPolicy} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-brand">
+        <p className="text-xs text-muted">{entries.length} entries · the source of truth</p>
+        <button onClick={newEntry} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-brand">
           + New
         </button>
       </div>
-      {INTENTS.map((intent) => {
-        const group = policies.filter((p) => p.intent === intent);
+      {groupOrder.map((intent) => {
+        const group = entries.filter((p) => p.intent === intent);
         if (group.length === 0) return null;
         return (
           <section key={intent}>
@@ -190,8 +296,8 @@ export default function HandbookEditor({
                   <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs">
                     {p.origin === "captured" && <span className="text-brand-strong">✎ captured</span>}
                     {p.sensitivity === "sensitive" && <span className="text-amber-600">sensitive</span>}
-                    <span className={p.status === "published" ? "text-brand-strong" : "text-muted"}>
-                      {p.status === "published" ? "✓ pub" : "draft"}
+                    <span className={p.status === "published" ? "text-foreground" : "text-muted"}>
+                      {STATUS_LABEL[p.status]}
                     </span>
                   </span>
                 </button>

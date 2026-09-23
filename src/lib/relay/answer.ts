@@ -5,14 +5,14 @@ import { getAuditContext } from "../repo/audit";
 import { answerEscalation, getEscalation } from "../repo/escalations";
 import { hasParentLeft } from "../repo/sessions";
 import { appendMessage } from "../repo/messages";
-import { upsertPolicy } from "../repo/policies";
+import { upsertEntry } from "../repo/knowledge";
 import { buildCapturedPolicy } from "./capture";
 import { getRelayBus } from "./bus";
 import { publishQueueCount } from "./queue";
 
 /**
  * The operator answers a waiting escalation (analysis/03 §4.2 — the money shot).
- * In one transaction we optionally capture the answer as a citable PolicyRecord,
+ * In one transaction we optionally capture the answer as a citable KnowledgeEntry,
  * mark the escalation answered, and append a `staff` message into the parent's
  * thread. After commit we publish it to the relay bus so it streams live into
  * the parent's open SSE connection, marked "✓ From our team".
@@ -31,7 +31,7 @@ export interface AnswerResult {
   conversationId: string;
   messageId: string;
   answeredBy: string;
-  promotedPolicyId: string | null;
+  promotedEntryId: string | null;
   /** How this answer reaches the parent — the route sends the email for "email". */
   delivery: EscalationDelivery;
   contactName: string | null;
@@ -141,7 +141,7 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
   const messageId = randomUUID();
 
   const commit = db.transaction(() => {
-    let promotedPolicyId: string | null = null;
+    let promotedEntryId: string | null = null;
     if (doCapture) {
       const intent: Intent = input.captureIntent ?? "tours";
       const policy = buildCapturedPolicy({
@@ -152,15 +152,15 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
         answeredBy,
         idSuffix: messageId.slice(0, 8),
       });
-      upsertPolicy(db, policy);
-      promotedPolicyId = policy.id;
+      upsertEntry(db, policy);
+      promotedEntryId = policy.id;
     }
 
     answerEscalation(db, {
       id: esc.id,
       answer,
       answeredBy,
-      promotedPolicyId,
+      promotedEntryId,
     });
 
     // Only append a chat message when there's a live parent to receive it.
@@ -177,10 +177,10 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
       createdAt = message.created_at;
     }
 
-    return { promotedPolicyId, createdAt };
+    return { promotedEntryId, createdAt };
   });
 
-  const { promotedPolicyId, createdAt } = commit();
+  const { promotedEntryId, createdAt } = commit();
 
   // The escalation left the waiting queue — push the fresh count to operators.
   publishQueueCount(db);
@@ -207,13 +207,13 @@ export function answerRelay(db: Database, input: AnswerInput): AnswerResult {
     conversationId: ctx.conversation_id,
     messageId,
     answeredBy,
-    promotedPolicyId,
+    promotedEntryId,
     delivery: esc.delivery,
     contactName: esc.contact_name,
     contactEmail: esc.contact_email,
     /** True when the reply streamed to a live parent. */
     posted: postLive,
     /** True when the parent had left and the answer was saved as knowledge. */
-    collectedKnowledge: parentGone && promotedPolicyId != null,
+    collectedKnowledge: parentGone && promotedEntryId != null,
   };
 }

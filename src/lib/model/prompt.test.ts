@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
 import { getCenter } from "../repo/center";
-import { listPublishedPolicies } from "../repo/policies";
+import { listPublishedEntries } from "../repo/knowledge";
 import { seedDatabase } from "../seed";
 import { buildSystemPrefix, GUIDED_STARTERS, relayMessage } from "./prompt";
 import { INTENTS } from "../types";
@@ -15,7 +15,7 @@ beforeEach(() => {
 
 describe("buildSystemPrefix", () => {
   const build = () =>
-    buildSystemPrefix(getCenter(db)!, listPublishedPolicies(db));
+    buildSystemPrefix(getCenter(db)!, listPublishedEntries(db));
 
   it("includes persona, center facts, and the grounding + escalation rules", () => {
     const s = build();
@@ -28,7 +28,7 @@ describe("buildSystemPrefix", () => {
 
   it("embeds every published policy with its id and structured data", () => {
     const s = build();
-    for (const p of listPublishedPolicies(db)) {
+    for (const p of listPublishedEntries(db)) {
       expect(s).toContain(`[${p.id}]`);
     }
     expect(s).toContain('"fever_f":100.4'); // structured payload is inlined
@@ -40,7 +40,7 @@ describe("buildSystemPrefix", () => {
 
   it("orders policies by id so the cached prefix is byte-stable", () => {
     const s = build();
-    const ids = listPublishedPolicies(db)
+    const ids = listPublishedEntries(db)
       .map((p) => p.id)
       .sort((a, b) => a.localeCompare(b));
     const positions = ids.map((id) => s.indexOf(`[${id}]`));

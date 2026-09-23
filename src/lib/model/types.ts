@@ -1,6 +1,6 @@
 import type {
   DetectedIntent,
-  PolicyRecord,
+  KnowledgeEntry,
   Provider,
   SensitiveCategory,
 } from "../types";
@@ -54,7 +54,7 @@ export interface GroundedAnswerInput {
 export interface JudgeInput {
   question: string;
   answer: string;
-  citedPolicies: PolicyRecord[];
+  citedPolicies: KnowledgeEntry[];
 }
 
 /** The seam. Implemented by ClaudeFrontDeskModel (default) and Gemini (M7). */

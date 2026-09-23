@@ -1,20 +1,20 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
-import { listPublishedPolicies } from "../repo/policies";
+import { listPublishedEntries } from "../repo/knowledge";
 import { seedDatabase } from "../seed";
 import { relayMessage } from "../model/prompt";
 import type { GroundedResult } from "../model/types";
-import type { PolicyRecord } from "../types";
+import type { KnowledgeEntry } from "../types";
 import { decide, type DecideContext } from "./decide";
 
 let db: Database;
-let policies: PolicyRecord[];
+let policies: KnowledgeEntry[];
 
 beforeEach(() => {
   db = createMemoryDb();
   seedDatabase(db);
-  policies = listPublishedPolicies(db);
+  policies = listPublishedEntries(db);
 });
 
 /** A well-grounded, non-sensitive answer proposal with no risky facts. */

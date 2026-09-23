@@ -6,7 +6,7 @@ import { getEmailSender } from "@/lib/email/sender";
 import { markEscalationDelivered } from "@/lib/repo/escalations";
 import { getCenter } from "@/lib/repo/center";
 import { getSettings } from "@/lib/repo/settings";
-import { INTENTS, type Intent } from "@/lib/types";
+import { type Intent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 /**
  * Operator answers a waiting escalation. The reply relays into the parent's
  * thread live (via the bus → SSE), marked "✓ From our team"; on capture it also
- * becomes a citable PolicyRecord so the front desk answers it next time.
+ * becomes a citable KnowledgeEntry so the front desk answers it next time.
  */
 export async function POST(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
@@ -29,11 +29,14 @@ export async function POST(request: Request) {
       );
     }
     const capture = body.capture === true;
-    const captureIntent =
-      typeof body.captureIntent === "string" &&
-      (INTENTS as readonly string[]).includes(body.captureIntent)
-        ? (body.captureIntent as Intent)
-        : undefined;
+    // Categories are operator-configurable, so accept any non-empty token.
+    const captureIntentRaw =
+      typeof body.captureIntent === "string"
+        ? body.captureIntent.trim().toLowerCase()
+        : "";
+    const captureIntent = captureIntentRaw
+      ? (captureIntentRaw as Intent)
+      : undefined;
 
     // Attribution: the client sends the operator's name; if it's blank, fall
     // back to the persisted on-duty operator (analysis/11 §4.5) before

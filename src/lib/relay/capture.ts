@@ -1,5 +1,5 @@
 import type { DecisionReason } from "../guardrails/decide";
-import type { Intent, PolicyInput } from "../types";
+import type { Intent, KnowledgeEntryInput } from "../types";
 
 /**
  * Capture is context-aware (analysis/03 §4.2): a general knowledge gap should
@@ -26,7 +26,7 @@ export function keywordsFromQuestion(question: string): string[] {
   return [...new Set(words)].slice(0, 8);
 }
 
-/** Build a captured PolicyRecord from a staff answer to a knowledge-gap question. */
+/** Build a captured KnowledgeEntry from a staff answer to a knowledge-gap question. */
 export function buildCapturedPolicy(input: {
   intent: Intent;
   question: string;
@@ -34,7 +34,7 @@ export function buildCapturedPolicy(input: {
   title?: string;
   answeredBy: string;
   idSuffix: string;
-}): PolicyInput {
+}): KnowledgeEntryInput {
   const title =
     input.title?.trim() ||
     (input.question.length > 60

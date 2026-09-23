@@ -7,7 +7,7 @@ import {
   listAllEscalations,
   listWaitingEscalations,
 } from "./repo/escalations";
-import { countCapturedPolicies } from "./repo/policies";
+import { countCapturedEntries } from "./repo/knowledge";
 import type { Escalation } from "./repo/escalations";
 
 /**
@@ -89,7 +89,7 @@ export interface DashboardMetrics {
   avgHandleMinutes: number;
   thumbsUp: number;
   thumbsDown: number;
-  capturedPolicies: number;
+  capturedEntries: number;
   waiting: number;
   topGaps: TopGap[];
   byIntent: { intent: string; answered: number; escalated: number }[];
@@ -138,7 +138,7 @@ const ratio = (n: number, d: number) => (d === 0 ? 0 : n / d);
 export function aggregate(
   audits: AuditMetricRow[],
   escalations: Escalation[],
-  capturedPolicies: number,
+  capturedEntries: number,
   waiting: number,
   avgHandleMinutes = AVG_HANDLE_MINUTES,
 ): DashboardMetrics {
@@ -202,7 +202,7 @@ export function aggregate(
     avgHandleMinutes,
     thumbsUp: audits.filter((a) => a.parent_feedback === "up").length,
     thumbsDown: audits.filter((a) => a.parent_feedback === "down").length,
-    capturedPolicies,
+    capturedEntries,
     waiting,
     topGaps,
     byIntent,
@@ -222,7 +222,7 @@ export function computeDashboard(
   return aggregate(
     withinRange(listAuditMetrics(db), (a) => a.timestamp, start),
     withinRange(listAllEscalations(db), (e) => e.created_at, start),
-    countCapturedPolicies(db),
+    countCapturedEntries(db),
     listWaitingEscalations(db).length,
     avgHandleMinutes,
   );

@@ -13,7 +13,7 @@ import {
 import { updateSettings } from "../repo/settings";
 import { createConversation } from "../repo/conversations";
 import { closeSession, createParentSession } from "../repo/sessions";
-import { getPolicy, listPublishedPolicies } from "../repo/policies";
+import { getEntry, listPublishedEntries } from "../repo/knowledge";
 import { listMessages } from "../repo/messages";
 import { isAdmin } from "../admin";
 import { getRelayBus, type QueueChangedEvent, type StaffMessageEvent } from "./bus";
@@ -136,13 +136,13 @@ describe("answerRelay — the live relay loop", () => {
     const esc = getEscalation(db, escId)!;
     expect(esc.status).toBe("answered");
     expect(esc.answered_by).toBe("Maria");
-    expect(esc.promoted_policy_id).toBeNull();
-    expect(res.promotedPolicyId).toBeNull();
+    expect(esc.promoted_entry_id).toBeNull();
+    expect(res.promotedEntryId).toBeNull();
   });
 
   it("captures the answer into a citable policy — deflection compounds", async () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
-    const before = listPublishedPolicies(db).length;
+    const before = listPublishedEntries(db).length;
 
     const res = answerRelay(db, {
       escalationId: turn.message.escalationId!,
@@ -152,18 +152,18 @@ describe("answerRelay — the live relay loop", () => {
       captureIntent: "hours",
     });
 
-    expect(res.promotedPolicyId).toBeTruthy();
-    const captured = getPolicy(db, res.promotedPolicyId!)!;
+    expect(res.promotedEntryId).toBeTruthy();
+    const captured = getEntry(db, res.promotedEntryId!)!;
     expect(captured.origin).toBe("captured");
     expect(captured.intent).toBe("hours");
 
     // it's now published, in the queue-answer's escalation link, and in the prefix
-    expect(listPublishedPolicies(db).length).toBe(before + 1);
-    expect(getEscalation(db, turn.message.escalationId!)!.promoted_policy_id).toBe(
-      res.promotedPolicyId,
+    expect(listPublishedEntries(db).length).toBe(before + 1);
+    expect(getEscalation(db, turn.message.escalationId!)!.promoted_entry_id).toBe(
+      res.promotedEntryId,
     );
-    const prefix = buildSystemPrefix(getCenter(db)!, listPublishedPolicies(db));
-    expect(prefix).toContain(res.promotedPolicyId!); // front desk can cite it next time
+    const prefix = buildSystemPrefix(getCenter(db)!, listPublishedEntries(db));
+    expect(prefix).toContain(res.promotedEntryId!); // front desk can cite it next time
   });
 
   it("rejects answering an unknown or already-answered escalation", async () => {
@@ -324,7 +324,7 @@ describe("parent left the session — collect knowledge instead of posting", () 
 
     expect(res.posted).toBe(false);
     expect(res.collectedKnowledge).toBe(true);
-    expect(res.promotedPolicyId).toBeTruthy(); // collected as knowledge
+    expect(res.promotedEntryId).toBeTruthy(); // collected as knowledge
     expect(received).toHaveLength(0); // nothing streamed to the gone parent
     expect(listMessages(db, "c1").some((m) => m.provenance === "staff")).toBe(false);
     expect(getEscalation(db, escId)!.status).toBe("answered"); // still resolved
@@ -367,7 +367,7 @@ describe("parent left the session — collect knowledge instead of posting", () 
     });
     expect(res.posted).toBe(false);
     expect(res.collectedKnowledge).toBe(false); // a specific case is never general knowledge
-    expect(res.promotedPolicyId).toBeNull();
+    expect(res.promotedEntryId).toBeNull();
     expect(getEscalation(db, cs.message.escalationId!)!.status).toBe("answered");
   });
 

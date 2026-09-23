@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { createConversation } from "@/lib/repo/conversations";
 import { getEscalation } from "@/lib/repo/escalations";
 import { listMessages } from "@/lib/repo/messages";
-import { getPolicy } from "@/lib/repo/policies";
+import { getEntry } from "@/lib/repo/knowledge";
 import { resolveAvailability } from "@/lib/repo/settings";
 import {
   closeSession,
@@ -28,7 +28,7 @@ function historyFor(db: ReturnType<typeof getDb>, conversationId: string) {
       return { key: m.id, role: "you" as const, text: m.text };
     }
     const citations = m.citations.flatMap((id) => {
-      const p = getPolicy(db, id);
+      const p = getEntry(db, id);
       return p ? [{ id: p.id, title: p.title, source: p.source }] : [];
     });
     const answeredBy = m.escalation_id

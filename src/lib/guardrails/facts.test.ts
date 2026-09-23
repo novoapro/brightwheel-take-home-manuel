@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
-import { getPolicy } from "../repo/policies";
+import { getEntry } from "../repo/knowledge";
 import { seedDatabase } from "../seed";
-import type { PolicyRecord } from "../types";
+import type { KnowledgeEntry } from "../types";
 import { buildSourceIndex, extractFacts, verifyFacts } from "./facts";
 
 describe("extractFacts", () => {
@@ -54,8 +54,8 @@ describe("extractFacts", () => {
 
 describe("verifyFacts against real seeded policies", () => {
   let db: Database;
-  const cite = (...ids: string[]): PolicyRecord[] =>
-    ids.map((id) => getPolicy(db, id)!);
+  const cite = (...ids: string[]): KnowledgeEntry[] =>
+    ids.map((id) => getEntry(db, id)!);
 
   beforeEach(() => {
     db = createMemoryDb();

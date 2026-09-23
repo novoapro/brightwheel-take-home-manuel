@@ -13,7 +13,7 @@ export interface Escalation {
   operator_answer: string | null;
   answered_by: string | null;
   answered_at: string | null;
-  promoted_policy_id: string | null;
+  promoted_entry_id: string | null;
   /** live = SSE relay into an open thread; email = async follow-up (analysis/11 §4.3). */
   delivery: EscalationDelivery;
   contact_name: string | null;
@@ -111,7 +111,7 @@ export function answerEscalation(
     id: string;
     answer: string;
     answeredBy: string;
-    promotedPolicyId?: string | null;
+    promotedEntryId?: string | null;
   },
 ): void {
   db.prepare(
@@ -120,13 +120,13 @@ export function answerEscalation(
             operator_answer = @answer,
             answered_by = @answeredBy,
             answered_at = @answered_at,
-            promoted_policy_id = @promotedPolicyId
+            promoted_entry_id = @promotedEntryId
       WHERE id = @id`,
   ).run({
     id: input.id,
     answer: input.answer,
     answeredBy: input.answeredBy,
     answered_at: new Date().toISOString(),
-    promotedPolicyId: input.promotedPolicyId ?? null,
+    promotedEntryId: input.promotedEntryId ?? null,
   });
 }

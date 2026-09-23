@@ -50,7 +50,7 @@ export type Health = {
   dbPath: string;
   app: string | null;
   schemaVersion: string | null;
-  policyCount: number;
+  entryCount: number;
   now: string;
 };
 
@@ -61,8 +61,8 @@ export function getHealth(): Health {
       | { value: string }
       | undefined)?.value ?? null;
 
-  const policyCount = (
-    db.prepare(`SELECT COUNT(*) AS n FROM policies`).get() as { n: number }
+  const entryCount = (
+    db.prepare(`SELECT COUNT(*) AS n FROM knowledge_entries`).get() as { n: number }
   ).n;
 
   return {
@@ -70,7 +70,7 @@ export function getHealth(): Health {
     dbPath: DB_PATH,
     app: row("app"),
     schemaVersion: row("schema_version") ?? String(SCHEMA_VERSION),
-    policyCount,
+    entryCount,
     now: new Date().toISOString(),
   };
 }

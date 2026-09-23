@@ -1,12 +1,12 @@
 import type { Database } from "better-sqlite3";
 import { upsertCenter } from "../repo/center";
-import { upsertPolicy } from "../repo/policies";
+import { upsertEntry } from "../repo/knowledge";
 import { getSettings } from "../repo/settings";
-import { CENTER, POLICIES } from "./data";
+import { CENTER, ENTRIES } from "./data";
 
 export interface SeedResult {
   center: string;
-  policies: number;
+  entries: number;
 }
 
 /**
@@ -20,13 +20,13 @@ export interface SeedResult {
 export function seedDatabase(db: Database): SeedResult {
   const run = db.transaction(() => {
     upsertCenter(db, CENTER);
-    for (const policy of POLICIES) {
-      upsertPolicy(db, policy);
+    for (const policy of ENTRIES) {
+      upsertEntry(db, policy);
     }
     // Ensure the single settings row exists with defaults.
     getSettings(db);
   });
   run();
 
-  return { center: CENTER.id, policies: POLICIES.length };
+  return { center: CENTER.id, entries: ENTRIES.length };
 }

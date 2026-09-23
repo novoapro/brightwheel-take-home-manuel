@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
 import { getCenter } from "../repo/center";
-import { countPolicies, getPolicy, listPolicies } from "../repo/policies";
+import { countEntries, getEntry, listEntries } from "../repo/knowledge";
 import { getSettings } from "../repo/settings";
 import { INTENTS, SENSITIVE_INTENTS } from "../types";
 import { seedDatabase } from "./index";
-import { POLICIES } from "./data";
+import { ENTRIES } from "./data";
 
 let db: Database;
 beforeEach(() => {
@@ -16,7 +16,7 @@ beforeEach(() => {
 describe("seedDatabase", () => {
   it("seeds the center, the policy set, and default settings", () => {
     const result = seedDatabase(db);
-    expect(result.policies).toBe(POLICIES.length);
+    expect(result.entries).toBe(ENTRIES.length);
     expect(getCenter(db)?.name).toMatch(/Little Acorns/);
     expect(getSettings(db)).toEqual({
       caution_level: "balanced",
@@ -26,12 +26,12 @@ describe("seedDatabase", () => {
       away_message: "",
       offline_at: null,
     });
-    expect(countPolicies(db)).toBe(POLICIES.length);
+    expect(countEntries(db)).toBe(ENTRIES.length);
   });
 
   it("seeds 15–25 policies (analysis/01 §6 sizing)", () => {
     seedDatabase(db);
-    const n = countPolicies(db);
+    const n = countEntries(db);
     expect(n).toBeGreaterThanOrEqual(15);
     expect(n).toBeLessThanOrEqual(25);
   });
@@ -39,7 +39,7 @@ describe("seedDatabase", () => {
   it("is idempotent — re-seeding does not duplicate", () => {
     seedDatabase(db);
     seedDatabase(db);
-    expect(countPolicies(db)).toBe(POLICIES.length);
+    expect(countEntries(db)).toBe(ENTRIES.length);
     expect(
       (db.prepare(`SELECT COUNT(*) AS n FROM center`).get() as { n: number }).n,
     ).toBe(1);
@@ -48,13 +48,13 @@ describe("seedDatabase", () => {
   it("covers all five intents", () => {
     seedDatabase(db);
     for (const intent of INTENTS) {
-      expect(listPolicies(db, { intent }).length).toBeGreaterThan(0);
+      expect(listEntries(db, { intent }).length).toBeGreaterThan(0);
     }
   });
 
   it("flags exactly the health policies as sensitive, and nothing else", () => {
     seedDatabase(db);
-    const sensitive = listPolicies(db, {}).filter(
+    const sensitive = listEntries(db, {}).filter(
       (p) => p.sensitivity === "sensitive",
     );
     expect(sensitive.length).toBeGreaterThan(0);
@@ -62,14 +62,14 @@ describe("seedDatabase", () => {
       expect(SENSITIVE_INTENTS).toContain(p.intent);
     }
     // and every health policy is marked sensitive
-    for (const p of listPolicies(db, { intent: "health" })) {
+    for (const p of listEntries(db, { intent: "health" })) {
       expect(p.sensitivity).toBe("sensitive");
     }
   });
 
   it("every policy has a source, keywords, and a non-empty structured payload", () => {
     seedDatabase(db);
-    for (const p of listPolicies(db, {})) {
+    for (const p of listEntries(db, {})) {
       expect(p.source, `${p.id} source`).toBeTruthy();
       expect(p.keywords.length, `${p.id} keywords`).toBeGreaterThan(0);
       expect(
@@ -81,7 +81,7 @@ describe("seedDatabase", () => {
 
   it("all seeded policies are published (parent-visible source of truth)", () => {
     seedDatabase(db);
-    for (const p of listPolicies(db, {})) expect(p.status).toBe("published");
+    for (const p of listEntries(db, {})) expect(p.status).toBe("published");
   });
 
   // ── The deterministic showcases (analysis/02 §4) must be answerable from data ──
@@ -89,7 +89,7 @@ describe("seedDatabase", () => {
     beforeEach(() => seedDatabase(db));
 
     it("Veterans Day 2026-11-11 is in the closure calendar", () => {
-      const holidays = getPolicy(db, "hours.holidays.2026")!;
+      const holidays = getEntry(db, "hours.holidays.2026")!;
       const closures = (
         holidays.structured.closures as { date: string; name: string }[]
       );
@@ -98,7 +98,7 @@ describe("seedDatabase", () => {
     });
 
     it("snow policy encodes the delay → 10:00 open, no breakfast cascade", () => {
-      const snow = getPolicy(db, "hours.snow_weather")!;
+      const snow = getEntry(db, "hours.snow_weather")!;
       const s = snow.structured as {
         delay: { open: string; breakfast_served: boolean };
         early_dismissal: { action: string };
@@ -111,19 +111,19 @@ describe("seedDatabase", () => {
     });
 
     it("fever threshold is exactly 100.4°F", () => {
-      const illness = getPolicy(db, "health.illness_exclusion")!;
+      const illness = getEntry(db, "health.illness_exclusion")!;
       expect((illness.structured as { fever_f: number }).fever_f).toBe(100.4);
     });
 
     it("return-to-care requires 24 fever-free hours", () => {
-      const ret = getPolicy(db, "health.return_to_care")!;
+      const ret = getEntry(db, "health.return_to_care")!;
       expect((ret.structured as { fever_free_hours: number }).fever_free_hours).toBe(
         24,
       );
     });
 
     it("late pickup is $15/occurrence with a 3-strike conference rule", () => {
-      const late = getPolicy(db, "hours.late_pickup")!;
+      const late = getEntry(db, "hours.late_pickup")!;
       const s = late.structured as {
         late_fee_usd: number;
         late_strikes_before_conference: number;
@@ -133,7 +133,7 @@ describe("seedDatabase", () => {
     });
 
     it("lunch is served at 11:30 and meals are provided", () => {
-      const meals = getPolicy(db, "meals.provided")!;
+      const meals = getEntry(db, "meals.provided")!;
       const s = meals.structured as {
         included: boolean;
         times: { lunch: string };
@@ -143,7 +143,7 @@ describe("seedDatabase", () => {
     });
 
     it("tuition has a rate for every age band", () => {
-      const tuition = getPolicy(db, "tuition.rates")!;
+      const tuition = getEntry(db, "tuition.rates")!;
       const rates = (tuition.structured as { rates: { group: string }[] })
         .rates;
       expect(rates.map((r) => r.group).sort()).toEqual([
@@ -156,7 +156,7 @@ describe("seedDatabase", () => {
   });
 
   it("policy ids are unique in the seed source", () => {
-    const ids = POLICIES.map((p) => p.id);
+    const ids = ENTRIES.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

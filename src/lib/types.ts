@@ -8,9 +8,17 @@
  * always work with parsed objects — never raw JSON strings.
  */
 
-/** The five core intents the front desk handles, plus the out-of-scope bucket. */
+/**
+ * The built-in core intents the front desk ships with. Operators can add their
+ * own categories (e.g. "transportation", "greetings") from the Knowledge Base
+ * editor, so an intent is any lowercase token — `INTENTS` are just the defaults
+ * we seed and always offer as suggestions.
+ */
 export const INTENTS = ["hours", "tuition", "health", "meals", "tours"] as const;
-export type Intent = (typeof INTENTS)[number];
+/** A knowledge-base category. Open-ended: the core defaults plus operator additions. */
+export type Intent = string;
+/** One of the built-in core intents (narrowed literal type where it's useful). */
+export type CoreIntent = (typeof INTENTS)[number];
 
 /** detected_intent on an interaction/escalation can also be out_of_scope. */
 export type DetectedIntent = Intent | "out_of_scope";
@@ -49,12 +57,17 @@ export const HARD_SENSITIVE: readonly SensitiveCategory[] = [
   "legal",
 ];
 
-export type PolicySensitivity = "none" | "sensitive";
-export type PolicyStatus = "published" | "draft";
-export type PolicyOrigin = "seed" | "captured";
+export type KnowledgeEntrySensitivity = "none" | "sensitive";
+/**
+ * published — served to parents (in the grounding prefix).
+ * draft      — a work in progress, not yet served.
+ * unpublished — complete but deliberately taken out of service (not served).
+ */
+export type KnowledgeEntryStatus = "published" | "draft" | "unpublished";
+export type KnowledgeEntryOrigin = "seed" | "captured";
 
-/** PolicyRecord — the atomic, citable source of truth (analysis/01 §2.2). */
-export interface PolicyRecord {
+/** KnowledgeEntry — the atomic, citable source of truth (analysis/01 §2.2). */
+export interface KnowledgeEntry {
   id: string;
   intent: Intent;
   title: string;
@@ -63,32 +76,32 @@ export interface PolicyRecord {
   structured: Record<string, unknown>;
   /** Terms for BM25 / exact-match citation anchoring. */
   keywords: string[];
-  sensitivity: PolicySensitivity;
+  sensitivity: KnowledgeEntrySensitivity;
   effective_from: string | null;
   effective_to: string | null;
   /** Shown in the attribution chip, e.g. "Family Handbook p.4". */
   source: string | null;
-  status: PolicyStatus;
-  origin: PolicyOrigin;
+  status: KnowledgeEntryStatus;
+  origin: KnowledgeEntryOrigin;
   version: number;
   updated_by: string | null;
   updated_at: string;
 }
 
 /** Fields accepted when authoring/seeding a policy; the rest get defaults. */
-export interface PolicyInput {
+export interface KnowledgeEntryInput {
   id: string;
   intent: Intent;
   title: string;
   body_md: string;
   structured: Record<string, unknown>;
   keywords: string[];
-  sensitivity?: PolicySensitivity;
+  sensitivity?: KnowledgeEntrySensitivity;
   effective_from?: string | null;
   effective_to?: string | null;
   source?: string | null;
-  status?: PolicyStatus;
-  origin?: PolicyOrigin;
+  status?: KnowledgeEntryStatus;
+  origin?: KnowledgeEntryOrigin;
   updated_by?: string | null;
 }
 

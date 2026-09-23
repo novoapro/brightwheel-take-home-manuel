@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import { upsertPolicy } from "../repo/policies";
+import { upsertEntry } from "../repo/knowledge";
 
 /**
  * Seed a realistic week of history (analysis/05 §6 decision) so the operator
@@ -16,7 +16,7 @@ const DAY_MS = 86_400_000;
 interface SeedResultHistory {
   audits: number;
   escalations: number;
-  capturedPolicies: number;
+  capturedEntries: number;
 }
 
 const ANSWER_TEMPLATES = [
@@ -65,17 +65,17 @@ export function seedHistory(db: Database): SeedResultHistory {
   const insertEsc = db.prepare(
     `INSERT INTO escalations
        (id, interaction_id, question, detected_intent, reason, status,
-        operator_answer, answered_by, answered_at, promoted_policy_id, created_at)
+        operator_answer, answered_by, answered_at, promoted_entry_id, created_at)
      VALUES
        (@id, @interaction_id, @question, @detected_intent, @reason, @status,
-        @operator_answer, @answered_by, @answered_at, @promoted_policy_id, @created_at)`,
+        @operator_answer, @answered_by, @answered_at, @promoted_entry_id, @created_at)`,
   );
 
   const run = db.transaction(() => {
     // Clear prior history so re-seeding doesn't duplicate.
     db.prepare(`DELETE FROM escalations WHERE id LIKE 'hist-%'`).run();
     db.prepare(`DELETE FROM interaction_audit WHERE id LIKE 'hist-%'`).run();
-    db.prepare(`DELETE FROM policies WHERE id LIKE 'captured.seed.%'`).run();
+    db.prepare(`DELETE FROM knowledge_entries WHERE id LIKE 'captured.seed.%'`).run();
 
     let audits = 0;
     let escalations = 0;
@@ -106,7 +106,7 @@ export function seedHistory(db: Database): SeedResultHistory {
     }
 
     // A previously-captured gap (the loop already tightened once): summer camp.
-    upsertPolicy(db, {
+    upsertEntry(db, {
       id: "captured.seed.summer-camp",
       intent: "hours",
       title: "Do you have a summer camp?",
@@ -147,7 +147,7 @@ export function seedHistory(db: Database): SeedResultHistory {
       operator_answer: "Yes! We run a summer camp for ages 3–5, June–August.",
       answered_by: "Maria",
       answered_at: ts(6, 2),
-      promoted_policy_id: "captured.seed.summer-camp",
+      promoted_entry_id: "captured.seed.summer-camp",
       created_at: ts(6, 4),
     });
     escalations++;
@@ -184,7 +184,7 @@ export function seedHistory(db: Database): SeedResultHistory {
           operator_answer: waiting ? null : "Thanks for asking — here's the info…",
           answered_by: waiting ? null : "Maria",
           answered_at: waiting ? null : ts(k % 7, g),
-          promoted_policy_id: null,
+          promoted_entry_id: null,
           created_at: ts(k % 7, g),
         });
         escalations++;
@@ -223,7 +223,7 @@ export function seedHistory(db: Database): SeedResultHistory {
           operator_answer: "A staff member followed up directly.",
           answered_by: "Maria",
           answered_at: ts(k % 7, c),
-          promoted_policy_id: null,
+          promoted_entry_id: null,
           created_at: ts(k % 7, c),
         });
         escalations++;
@@ -231,7 +231,7 @@ export function seedHistory(db: Database): SeedResultHistory {
       }
     }
 
-    return { audits, escalations, capturedPolicies: 1 };
+    return { audits, escalations, capturedEntries: 1 };
   });
 
   return run();

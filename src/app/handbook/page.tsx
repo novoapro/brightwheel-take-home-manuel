@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { getCenter } from "@/lib/repo/center";
-import { listPublishedPolicies } from "@/lib/repo/policies";
+import { listPublishedEntries } from "@/lib/repo/knowledge";
 import { renderMarkdownLite } from "@/lib/markdown";
 import { INTENTS, type Intent } from "@/lib/types";
 import BrandMark from "@/components/BrandMark";
 import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
 
-// The parent-facing read-only handbook — the single source of truth, derived
-// from PolicyRecords (analysis/01 §2). Attribution chips in the chat link here
-// by policy id (#<id>).
+// The parent-facing read-only handbook — one view onto the Knowledge Base,
+// derived from published KnowledgeEntries (analysis/01 §2). Attribution chips in
+// the chat link here by entry id (#<id>).
 export const dynamic = "force-dynamic";
 
-const INTENT_LABELS: Record<Intent, string> = {
+const INTENT_LABELS: Record<string, string> = {
   hours: "Hours & Closures",
   tuition: "Tuition & Fees",
   health: "Health & Sick-Child",
@@ -20,10 +20,23 @@ const INTENT_LABELS: Record<Intent, string> = {
   tours: "Tours & Enrollment",
 };
 
+/** Fall back to a readable heading for operator-added categories. */
+function categoryLabel(intent: Intent): string {
+  return (
+    INTENT_LABELS[intent] ??
+    intent.replace(/(^|\s|-)([a-z])/g, (_, sep, c) => sep + c.toUpperCase())
+  );
+}
+
 export default function HandbookPage() {
   const db = getDb();
   const center = getCenter(db);
-  const policies = listPublishedPolicies(db);
+  const policies = listPublishedEntries(db);
+  // Core categories first (canonical order), then operator-added ones, sorted.
+  const extras = [...new Set(policies.map((p) => p.intent))]
+    .filter((i) => !(INTENTS as readonly string[]).includes(i))
+    .sort();
+  const categories = [...INTENTS, ...extras];
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-8">
@@ -40,13 +53,13 @@ export default function HandbookPage() {
         </Link>
       </header>
 
-      {INTENTS.map((intent) => {
+      {categories.map((intent) => {
         const group = policies.filter((p) => p.intent === intent);
         if (group.length === 0) return null;
         return (
           <section key={intent} className="mb-8">
             <h2 className="mb-3 border-b border-border pb-1 text-sm font-semibold uppercase tracking-wide text-muted">
-              {INTENT_LABELS[intent]}
+              {categoryLabel(intent)}
             </h2>
             <div className="flex flex-col gap-5">
               {group.map((p) => (

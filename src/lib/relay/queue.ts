@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { getAudit, getAuditContext } from "../repo/audit";
 import { listWaitingEscalations } from "../repo/escalations";
-import { getPolicy } from "../repo/policies";
+import { getEntry } from "../repo/knowledge";
 import { hasParentLeft } from "../repo/sessions";
 import type { DetectedIntent, EscalationDelivery } from "../types";
 import { captureDefaultFor } from "./capture";
@@ -46,7 +46,7 @@ export function buildRelayQueue(db: Database): QueueItem[] {
   return listWaitingEscalations(db).map((esc) => {
     const audit = esc.interaction_id ? getAudit(db, esc.interaction_id) : null;
     const aiReferenced = (audit?.cited_sources ?? []).flatMap((id) => {
-      const p = getPolicy(db, id);
+      const p = getEntry(db, id);
       return p ? [p.title] : [];
     });
     const ctx = esc.interaction_id ? getAuditContext(db, esc.interaction_id) : null;

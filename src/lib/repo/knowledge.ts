@@ -1,20 +1,21 @@
 import type { Database } from "better-sqlite3";
+import { INTENTS } from "../types";
 import type {
   Intent,
-  PolicyInput,
-  PolicyRecord,
-  PolicyStatus,
+  KnowledgeEntryInput,
+  KnowledgeEntry,
+  KnowledgeEntryStatus,
 } from "../types";
 
 /**
- * Repository for PolicyRecord — the citable source of truth.
+ * Repository for KnowledgeEntry — the citable source of truth.
  *
  * All functions take an explicit `Database` so they're trivially testable
  * against an in-memory DB. The JSON-shaped columns (structured, keywords) are
  * (de)serialized here so callers only ever see parsed objects.
  */
 
-type PolicyRow = {
+type EntryRow = {
   id: string;
   intent: Intent;
   title: string;
@@ -25,14 +26,14 @@ type PolicyRow = {
   effective_from: string | null;
   effective_to: string | null;
   source: string | null;
-  status: PolicyStatus;
+  status: KnowledgeEntryStatus;
   origin: "seed" | "captured";
   version: number;
   updated_by: string | null;
   updated_at: string;
 };
 
-function rowToRecord(row: PolicyRow): PolicyRecord {
+function rowToRecord(row: EntryRow): KnowledgeEntry {
   return {
     id: row.id,
     intent: row.intent,
@@ -56,15 +57,15 @@ function rowToRecord(row: PolicyRow): PolicyRecord {
  * Insert a new policy, or update an existing one by id (bumping its version).
  * Used by the seed (fresh insert) and by later curation/capture flows.
  */
-export function upsertPolicy(db: Database, input: PolicyInput): PolicyRecord {
+export function upsertEntry(db: Database, input: KnowledgeEntryInput): KnowledgeEntry {
   const now = new Date().toISOString();
   const existing = db
-    .prepare(`SELECT version FROM policies WHERE id = ?`)
+    .prepare(`SELECT version FROM knowledge_entries WHERE id = ?`)
     .get(input.id) as { version: number } | undefined;
   const version = existing ? existing.version + 1 : 1;
 
   db.prepare(
-    `INSERT INTO policies
+    `INSERT INTO knowledge_entries
        (id, intent, title, body_md, structured, keywords, sensitivity,
         effective_from, effective_to, source, status, origin, version,
         updated_by, updated_at)
@@ -105,26 +106,26 @@ export function upsertPolicy(db: Database, input: PolicyInput): PolicyRecord {
     updated_at: now,
   });
 
-  return getPolicy(db, input.id)!;
+  return getEntry(db, input.id)!;
 }
 
-export function getPolicy(db: Database, id: string): PolicyRecord | null {
-  const row = db.prepare(`SELECT * FROM policies WHERE id = ?`).get(id) as
-    | PolicyRow
+export function getEntry(db: Database, id: string): KnowledgeEntry | null {
+  const row = db.prepare(`SELECT * FROM knowledge_entries WHERE id = ?`).get(id) as
+    | EntryRow
     | undefined;
   return row ? rowToRecord(row) : null;
 }
 
-export interface ListPolicyFilter {
+export interface ListEntryFilter {
   intent?: Intent;
-  status?: PolicyStatus;
+  status?: KnowledgeEntryStatus;
 }
 
 /** List policies, optionally filtered by intent and/or status, id-ordered. */
-export function listPolicies(
+export function listEntries(
   db: Database,
-  filter: ListPolicyFilter = {},
-): PolicyRecord[] {
+  filter: ListEntryFilter = {},
+): KnowledgeEntry[] {
   const clauses: string[] = [];
   const params: Record<string, string> = {};
   if (filter.intent) {
@@ -137,26 +138,66 @@ export function listPolicies(
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = db
-    .prepare(`SELECT * FROM policies ${where} ORDER BY id`)
-    .all(params) as PolicyRow[];
+    .prepare(`SELECT * FROM knowledge_entries ${where} ORDER BY id`)
+    .all(params) as EntryRow[];
   return rows.map(rowToRecord);
 }
 
-/** Convenience: all published policies — the grounding prefix in M2. */
-export function listPublishedPolicies(db: Database): PolicyRecord[] {
-  return listPolicies(db, { status: "published" });
+/**
+ * Convenience: all published entries — the grounding prefix in M2. Only
+ * `published` entries are served; drafts and unpublished entries are withheld.
+ */
+export function listPublishedEntries(db: Database): KnowledgeEntry[] {
+  return listEntries(db, { status: "published" });
 }
 
-export function countPolicies(db: Database): number {
-  return (db.prepare(`SELECT COUNT(*) AS n FROM policies`).get() as { n: number })
+export function countEntries(db: Database): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM knowledge_entries`).get() as { n: number })
     .n;
 }
 
-/** Count policies born from the capture loop (origin = captured). */
-export function countCapturedPolicies(db: Database): number {
+/** Count entries born from the capture loop (origin = captured). */
+export function countCapturedEntries(db: Database): number {
   return (
     db
-      .prepare(`SELECT COUNT(*) AS n FROM policies WHERE origin = 'captured'`)
+      .prepare(`SELECT COUNT(*) AS n FROM knowledge_entries WHERE origin = 'captured'`)
       .get() as { n: number }
   ).n;
+}
+
+/**
+ * Permanently remove an entry from the knowledge base. Any escalation whose
+ * capture edge (`promoted_entry_id`) pointed at it is first unlinked so the
+ * FK stays valid and the escalation history is preserved. Returns whether a row
+ * was actually deleted.
+ */
+export function deleteEntry(db: Database, id: string): boolean {
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE escalations SET promoted_entry_id = NULL WHERE promoted_entry_id = ?`,
+    ).run(id);
+    const res = db.prepare(`DELETE FROM knowledge_entries WHERE id = ?`).run(id);
+    return res.changes > 0;
+  })();
+}
+
+/**
+ * The distinct categories present in the knowledge base, with the built-in core
+ * intents first (in their canonical order) followed by any operator-added
+ * categories, alphabetically. Powers the editor's category suggestions and the
+ * grouped list view.
+ */
+export function listIntents(db: Database): Intent[] {
+  const present = new Set(
+    (
+      db
+        .prepare(`SELECT DISTINCT intent FROM knowledge_entries`)
+        .all() as { intent: string }[]
+    ).map((r) => r.intent),
+  );
+  const core = [...INTENTS];
+  const extras = [...present]
+    .filter((i) => !(INTENTS as readonly string[]).includes(i))
+    .sort();
+  return [...core, ...extras];
 }

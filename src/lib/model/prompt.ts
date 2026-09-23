@@ -1,4 +1,4 @@
-import type { Center, PolicyRecord, SensitiveCategory } from "../types";
+import type { Center, KnowledgeEntry, SensitiveCategory } from "../types";
 
 /**
  * The cached system prefix (analysis/04 §4.1) — stable across every parent, so
@@ -8,7 +8,7 @@ import type { Center, PolicyRecord, SensitiveCategory } from "../types";
  */
 export function buildSystemPrefix(
   center: Center,
-  publishedPolicies: PolicyRecord[],
+  publishedPolicies: KnowledgeEntry[],
 ): string {
   const facts = [
     `Name: ${center.name}`,

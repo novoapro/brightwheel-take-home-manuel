@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { INTENTS, type Intent } from "@/lib/types";
+import { useKnowledgeIntents } from "./useKnowledgeIntents";
 import RelayChat from "./RelayChat";
 
 type QueueItem = {
@@ -145,6 +146,7 @@ function RelayCard({
       ? item.intent
       : "tours") as Intent,
   );
+  const intents = useKnowledgeIntents(passcode);
   const [sending, setSending] = useState(false);
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -274,9 +276,9 @@ function RelayCard({
             onChange={(e) => setCaptureIntent(e.target.value as Intent)}
             className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
           >
-            {INTENTS.map((i) => (
-              <option key={i} value={i}>{i}</option>
-            ))}
+            {intents.map((i) => (
+                <option key={i} value={i}>{i}</option>
+              ))}
           </select>
         </div>
       ) : parentLeft ? null : (
@@ -289,7 +291,7 @@ function RelayCard({
               onChange={(e) => setCaptureIntent(e.target.value as Intent)}
               className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
             >
-              {INTENTS.map((i) => (
+              {intents.map((i) => (
                 <option key={i} value={i}>{i}</option>
               ))}
             </select>
@@ -328,8 +330,8 @@ function RelayCard({
                     ? "Send email + Save"
                     : "Send email (simulated)"
                   : capture
-                    ? "Send + Save"
-                    : "Send to parent's chat"}
+                    ? "Reply + Save"
+                    : "Reply to parent's chat"}
       </button>
 
       {/* Dismiss — the parent left / thread went stale; clear it without replying. */}

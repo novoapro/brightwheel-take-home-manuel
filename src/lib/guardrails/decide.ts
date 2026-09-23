@@ -2,7 +2,7 @@ import type { GroundedResult, JudgeInput, JudgeResult } from "../model/types";
 import type {
   CautionLevel,
   DetectedIntent,
-  PolicyRecord,
+  KnowledgeEntry,
   SensitiveCategory,
 } from "../types";
 import { HARD_SENSITIVE, SENSITIVE_INTENTS } from "../types";
@@ -58,7 +58,7 @@ export interface DecideContext {
   /** The parent's question — passed to the groundedness judge (3e). */
   question: string;
   /** All published policies — used for citation validity + fact sourcing. */
-  publishedPolicies: PolicyRecord[];
+  publishedPolicies: KnowledgeEntry[];
   caution: CautionLevel;
   /** The groundedness judge (Haiku). Injected so the wrapper is testable. */
   judge: (input: JudgeInput) => Promise<JudgeResult>;

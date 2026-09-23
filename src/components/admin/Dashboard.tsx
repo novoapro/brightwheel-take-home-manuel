@@ -14,7 +14,7 @@ type Metrics = {
   avgHandleMinutes: number;
   thumbsUp: number;
   thumbsDown: number;
-  capturedPolicies: number;
+  capturedEntries: number;
   waiting: number;
   topGaps: { question: string; count: number; intent: string | null }[];
   byProvider: { provider: string; total: number; containmentRate: number; groundedness: number | null }[];
@@ -121,7 +121,7 @@ export default function Dashboard({
             <Stat label="Answers with a source" value={pct(m.attributionRate)} />
             <Stat label={`Interactions · ${rangeLabel.toLowerCase()}`} value={String(m.total)} />
             <Stat label="👍 / 👎" value={`${m.thumbsUp} / ${m.thumbsDown}`} />
-            <Stat label="Captured into handbook" value={String(m.capturedPolicies)} />
+            <Stat label="Captured into Knowledge Base" value={String(m.capturedEntries)} />
             <Stat label="Escalated to you" value={pct(m.escalationRate)} />
           </div>
 

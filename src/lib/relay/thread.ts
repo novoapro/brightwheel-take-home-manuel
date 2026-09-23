@@ -3,7 +3,7 @@ import { getAudit } from "../repo/audit";
 import { getConversation } from "../repo/conversations";
 import { getEscalation } from "../repo/escalations";
 import { listMessages } from "../repo/messages";
-import { getPolicy } from "../repo/policies";
+import { getEntry } from "../repo/knowledge";
 import { getParentSession, hasParentLeft } from "../repo/sessions";
 import type { DetectedIntent } from "../types";
 
@@ -53,7 +53,7 @@ export function buildRelayThread(db: Database, escalationId: string): RelayThrea
 
   const audit = getAudit(db, esc.interaction_id);
   const aiReferenced = (audit?.cited_sources ?? []).flatMap((id) => {
-    const p = getPolicy(db, id);
+    const p = getEntry(db, id);
     return p ? [p.title] : [];
   });
 
@@ -67,7 +67,7 @@ export function buildRelayThread(db: Database, escalationId: string): RelayThrea
         provenance: m.provenance,
         text: m.text,
         citations: m.citations.flatMap((id) => {
-          const p = getPolicy(db, id);
+          const p = getEntry(db, id);
           return p ? [{ id: p.id, title: p.title }] : [];
         }),
         answeredBy: m.escalation_id

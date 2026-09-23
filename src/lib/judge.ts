@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import { getModel } from "./model";
 import type { FrontDeskModel } from "./model/types";
 import { setJudgeScores } from "./repo/audit";
-import { getPolicy } from "./repo/policies";
+import { getEntry } from "./repo/knowledge";
 import { getSettings } from "./repo/settings";
 
 /**
@@ -22,7 +22,7 @@ export async function judgeInteraction(
   model?: FrontDeskModel,
 ): Promise<{ groundedness: number; answer_relevancy: number } | null> {
   const citedPolicies = input.citationIds.flatMap((id) => {
-    const p = getPolicy(db, id);
+    const p = getEntry(db, id);
     return p ? [p] : [];
   });
   if (citedPolicies.length === 0) return null; // nothing grounded to judge

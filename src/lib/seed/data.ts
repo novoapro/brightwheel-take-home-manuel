@@ -1,4 +1,4 @@
-import type { Center, PolicyInput } from "../types";
+import type { Center, KnowledgeEntryInput } from "../types";
 
 /**
  * Seed data for Little Acorns Early Learning Center.
@@ -38,7 +38,7 @@ export const CENTER: Center = {
     "Hi! I can help with **hours, tuition, sick-day policy, meals, and tours** — with answers straight from our center. What can I help you with?",
 };
 
-export const POLICIES: PolicyInput[] = [
+export const ENTRIES: KnowledgeEntryInput[] = [
   // ─────────────────────────── HOURS & CLOSURES ───────────────────────────
   {
     id: "hours.regular",

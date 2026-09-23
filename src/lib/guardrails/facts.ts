@@ -1,4 +1,4 @@
-import type { PolicyRecord } from "../types";
+import type { KnowledgeEntry } from "../types";
 
 /**
  * Deterministic structured-fact verification (analysis/04 §3c, analysis/07 §3).
@@ -156,7 +156,7 @@ export function extractFacts(text: string): Fact[] {
  * checkable token found is normalized with the SAME extractors used on the
  * answer, so comparison is apples-to-apples.
  */
-export function buildSourceIndex(citedPolicies: PolicyRecord[]): Set<string> {
+export function buildSourceIndex(citedPolicies: KnowledgeEntry[]): Set<string> {
   const index = new Set<string>();
   const addFrom = (text: string) => {
     for (const f of extractFacts(text)) {
@@ -201,7 +201,7 @@ export interface FactCheck {
  */
 export function verifyFacts(
   answer: string,
-  citedPolicies: PolicyRecord[],
+  citedPolicies: KnowledgeEntry[],
 ): FactCheck {
   const index = buildSourceIndex(citedPolicies);
   const facts = extractFacts(answer);

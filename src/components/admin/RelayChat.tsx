@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { INTENTS, type Intent } from "@/lib/types";
+import { useKnowledgeIntents } from "./useKnowledgeIntents";
 
 type ThreadMessage = {
   id: string;
@@ -66,6 +67,7 @@ export default function RelayChat({
       ? intentHint
       : "tours") as Intent,
   );
+  const intents = useKnowledgeIntents(passcode);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -240,7 +242,7 @@ export default function RelayChat({
                     onChange={(e) => setCaptureIntent(e.target.value as Intent)}
                     className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
                   >
-                    {INTENTS.map((i) => (
+                    {intents.map((i) => (
                       <option key={i} value={i}>
                         {i}
                       </option>
@@ -261,11 +263,11 @@ export default function RelayChat({
                       onChange={(e) => setCaptureIntent(e.target.value as Intent)}
                       className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
                     >
-                      {INTENTS.map((i) => (
-                        <option key={i} value={i}>
-                          {i}
-                        </option>
-                      ))}
+                      {intents.map((i) => (
+                      <option key={i} value={i}>
+                        {i}
+                      </option>
+                    ))}
                     </select>
                   ) : (
                     <span className="text-xs text-muted">

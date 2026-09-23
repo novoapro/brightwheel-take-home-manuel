@@ -4,7 +4,7 @@ import { getModel } from "./model";
 import type { FrontDeskModel, Msg } from "./model/types";
 import { buildSystemPrefix, relayMessage } from "./model/prompt";
 import { getCenter } from "./repo/center";
-import { listPublishedPolicies } from "./repo/policies";
+import { listPublishedEntries } from "./repo/knowledge";
 import { getSettings } from "./repo/settings";
 
 /**
@@ -32,7 +32,7 @@ export async function ask(db: Database, input: AskInput): Promise<AskResult> {
   if (!center) {
     throw new Error("No center configured — run `npm run db:seed` first.");
   }
-  const publishedPolicies = listPublishedPolicies(db);
+  const publishedPolicies = listPublishedEntries(db);
   const settings = getSettings(db);
   const model = input.model ?? getModel(settings.active_provider, db);
 

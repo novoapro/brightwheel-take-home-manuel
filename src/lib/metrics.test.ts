@@ -37,7 +37,7 @@ function esc(question: string, reason: string): Escalation {
     operator_answer: null,
     answered_by: null,
     answered_at: null,
-    promoted_policy_id: null,
+    promoted_entry_id: null,
     delivery: "live",
     contact_name: null,
     contact_email: null,
@@ -150,7 +150,7 @@ describe("computeDashboard over seeded history", () => {
     expect(m.escalated).toBe(14);
     expect(m.containmentRate).toBeCloseTo(42 / 56);
     expect(m.hoursSaved).toBeCloseTo((42 * 6) / 60);
-    expect(m.capturedPolicies).toBe(1);
+    expect(m.capturedEntries).toBe(1);
     expect(m.waiting).toBe(2);
     expect(m.topGaps[0].question).toMatch(/part-time/i);
     expect(m.topGaps[0].count).toBe(5);

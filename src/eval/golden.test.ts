@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createMemoryDb } from "../lib/db";
 import { seedDatabase } from "../lib/seed";
-import { listPolicies } from "../lib/repo/policies";
+import { listEntries } from "../lib/repo/knowledge";
 import { INTENTS, SENSITIVE_CATEGORIES } from "../lib/types";
 import { GOLDEN_CASES } from "./golden";
 
@@ -15,7 +15,7 @@ describe("golden set integrity", () => {
   it("every answered case cites at least one REAL seeded policy id", () => {
     const db = createMemoryDb();
     seedDatabase(db);
-    const realIds = new Set(listPolicies(db).map((p) => p.id));
+    const realIds = new Set(listEntries(db).map((p) => p.id));
     for (const c of GOLDEN_CASES) {
       if (c.expect.decision !== "answered") continue;
       expect(c.expect.citesAny, `${c.id} must declare citesAny`).toBeTruthy();
