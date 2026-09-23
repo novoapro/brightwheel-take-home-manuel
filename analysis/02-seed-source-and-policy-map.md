@@ -1,6 +1,6 @@
 # Seed Source & Policy Map (Stage 2 — grounding the seed data)
 
-**Purpose:** Turn the real Albuquerque family handbook (the one the brief pointed to) into the concrete seed **PolicyRecords** and **escalation taxonomy** for Little Acorns — grounded in real policy so the demo is realistic, adapted (not copied) into our fictional independent SMB.
+**Purpose:** Turn the real Albuquerque family handbook (the one the brief pointed to) into the concrete seed **KnowledgeEntries** and **escalation taxonomy** for Little Acorns — grounded in real policy so the demo is realistic, adapted (not copied) into our fictional independent SMB.
 **Status:** Draft · Date: 2026-09-22 · Depends on: [01-data-and-knowledge-model.md](01-data-and-knowledge-model.md)
 **Source:** City of Albuquerque, Division of Child & Family Development — *2019 Family Handbook* (public document, cabq.gov). Read locally, pp. 1–58.
 
@@ -8,7 +8,7 @@
 
 ## 1. Provenance & adaptation stance
 
-- **Public document, used as factual inspiration** — not reproduced verbatim. Little Acorns PolicyRecords are **reworded and adapted** into our own voice and center. (The brief explicitly invites using this handbook as inspiration; we invent the center.)
+- **Public document, used as factual inspiration** — not reproduced verbatim. Little Acorns KnowledgeEntries are **reworded and adapted** into our own voice and center. (The brief explicitly invites using this handbook as inspiration; we invent the center.)
 - **Key adaptation — city program → independent SMB.** The source is a *city-run Head Start / NM Pre-K* program: income-based **graduated fees, state subsidies, CACFP-funded meals, APS-linked closures**. Little Acorns is an **independent, owner-operated SMB**, so:
   - We keep **operational policies faithful** (hours structure, illness exclusion, late-pickup, closures logic, meals-provided, enrollment/tour flow, safety escalations) — these are realistic and transferable.
   - We **replace income-based fees with invented flat published tuition by age group** — what an independent center actually posts on its site. (Rationale noted in §5.)
@@ -16,9 +16,9 @@
 
 ---
 
-## 2. Intent → PolicyRecord candidate map
+## 2. Intent → KnowledgeEntry candidate map
 
-Each row is a candidate `PolicyRecord` (per [01 §2.2](01-data-and-knowledge-model.md)). "Grounded fact" = from the handbook; "Structured payload" = the typed data that powers deterministic logic; "Invent" = what we fabricate for Little Acorns.
+Each row is a candidate `KnowledgeEntry` (per [01 §2.2](01-data-and-knowledge-model.md)). "Grounded fact" = from the handbook; "Structured payload" = the typed data that powers deterministic logic; "Invent" = what we fabricate for Little Acorns.
 
 ### 2.1 HOURS & CLOSURES  (`intent: hours`)
 | Candidate record | Grounded fact (source) | Structured payload | Invent |
@@ -72,8 +72,8 @@ Straight from the handbook, mapped to the canonical `sensitive_category` set ([0
 
 | Handbook topic | Escalation reason | Why it must be a human |
 |---|---|---|
-| Custody / divorced-separated parents, restraining orders, pickup authorization | `sensitive:custody` / `pii` | Legal, child-safety, identity-specific — center is "a neutral party." |
-| **Suspected child abuse/neglect** | `sensitive:safety` | Mandatory legal report; explicitly **not confidential**. Never a chatbot topic. |
+| Custody / divorced-separated parents, restraining orders, pickup authorization | `sensitive:custody` (court orders → `sensitive:legal`) | Legal, child-safety, identity-specific — center is "a neutral party." |
+| **Suspected child abuse/neglect** | `sensitive:abuse` | Mandatory legal report; explicitly **not confidential**. Never a chatbot topic. |
 | Accidents / injuries / hospitalization / incident reports | `sensitive:incident` | Child-specific medical event. |
 | Behavioral issues / restraint / expulsion risk | `sensitive:behavior` | Requires a conference, judgment, care. |
 | Disenrollment / termination / fees in arrears | `sensitive:billing` / `sensitive:enrollment` | Account-specific, emotionally charged. |
@@ -113,7 +113,7 @@ These are the handbook facts that let us demonstrate *real logic*, not paraphras
 
 ## 6. Forwarded to next stages
 
-- **Seed authoring (data stage):** write the ~15–25 PolicyRecords above with real `structured` payloads + the invented gaps.
+- **Seed authoring (data stage):** write the ~15–25 KnowledgeEntries above with real `structured` payloads + the invented gaps.
 - **Grounding/prompts (Stage 04):** encode the **"policy = answer, case = escalate"** rule and the sensitive taxonomy in §3 as the escalation decision.
 - **Audit seed (Stage 05):** seed interactions that exercise the §4 showcases (some answered, some escalated) so metrics render live.
 - **Handbook view (per [01](01-data-and-knowledge-model.md)):** the read-only parent handbook page renders from these records.

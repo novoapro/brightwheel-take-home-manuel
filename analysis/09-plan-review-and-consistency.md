@@ -96,7 +96,7 @@ Matches the [04 §3](04-grounding-and-prompts.md) wrapper exactly; [01](01-data-
 | Hosting = Railway | 00, 01, 03, 06, 08 | ✅ |
 | Persistence = better-sqlite3 (volume) | 01, 06, 08 | ✅ (after C1) |
 | Real-time = SSE | 03, 06, 08 | ✅ |
-| Model layer = hand-rolled, Claude+Gemini | 00, 04, 06, 08 | ✅ |
+| Model layer = hand-rolled, three providers (Anthropic + OpenAI + Google) | 00, 04, 06, 08, 11 | ✅ |
 | Escalation = live staff relay (one voice) | 00, 02, 03, 04, 05 | ✅ (after C4/§2 sweep) |
 | Answerer Sonnet 5 / judge Haiku | 04, 05, 06, 08 | ✅ |
 | 5 intents | 00, 02, 03, 04 | ✅ |

@@ -22,9 +22,9 @@ Non-negotiables carried from scope: **mobile-first**, **trust cues on every answ
 
 Two surfaces, one codebase:
 - **`/`  — Parent front desk.** Anonymous, no login. Chat + guided starters. This is the polished, phone-first centerpiece.
-- **`/admin` — Operator control center.** Behind a **mock passcode** (not real auth — a non-goal). Tabs: **Dashboard · Live relay · Handbook · Settings**.
+- **`/admin` — Operator control center.** Behind a **mock passcode** (not real auth — a non-goal). Tabs: **Dashboard · Live relay · Sessions · Knowledge Base · Branding · Settings**.
 - **Real-time link parent ↔ operator.** Escalations relay live over **SSE** (the Railway always-on container holds the stream open; [08](08-architecture-and-stack-review.md)): the parent's "checking with our team…" thread receives the staff reply in real time. This powers the two-pane live demo.
-- **`/handbook` — derived read-only handbook** (rendered from PolicyRecords, [01](01-data-and-knowledge-model.md)); linked from parent attribution chips *and* editable via `/admin`.
+- **`/handbook` — derived read-only handbook** (rendered from `KnowledgeEntries`, [01](01-data-and-knowledge-model.md)); linked from parent attribution chips *and* editable via the **Knowledge Base** tab in `/admin`.
 
 ---
 
@@ -130,7 +130,7 @@ Hero = **hours saved** (the ROI number). Then trust, then the actionable gaps an
 ```
 ┌─────────────────────────────┐
 │ Little Acorns · Control Ctr │
-│ Dashboard·Escalations·Handbook·Settings│
+│ Dashboard·Live relay·Sessions·Knowledge Base·Branding·Settings│
 │                             │
 │ ┌ This week ───────────────┐│
 │ │  ⏱ 6.4 hrs saved         ││
@@ -196,12 +196,12 @@ The queue is the **real-time** "a parent is waiting" view — the parent sees "c
 ```
 *Craft:* the **capture toggle is context-aware** — defaulted **off** for case-specific/sensitive (a fever reply must never become an auto-answer), **on** for general knowledge gaps. That single behavior *is* "policy = answer, case = escalate," enforced in the operator UX. On publish, a small line confirms the compounding: "This will now help future families."
 
-### 4.3 Handbook / source-of-truth editor
+### 4.3 Knowledge Base / source-of-truth editor
 List by intent; edit prose **and** structured data; publish/draft; `✎ captured` badge shows loop-born records.
 
 ```
 ┌─────────────────────────────┐         ┌─────────────────────────────┐
-│ ‹ Handbook (source of truth)│         │ ‹ Edit · 2026 Holiday Closures│
+│ ‹ Knowledge Base (source of truth)│    │ ‹ Edit · 2026 Holiday Closures│
 │ [+ New]           [Preview] │         │ Title [2026 Holiday Closures]│
 │                             │         │ Intent [Hours▾] Sensitivity[None]│
 │ Hours & closures        (5) │         │                             │
@@ -218,7 +218,7 @@ List by intent; edit prose **and** structured data; publish/draft; `✎ captured
 ```
 *Craft:* editing **structured data** (dates, rates, thresholds) — not just prose — is what makes answers deterministic. The editor exposes that directly, which is the depth the brief rewards.
 
-### 4.4 Settings — the safety dial + provider toggle
+### 4.4 Settings — the safety dial + provider config
 Two controls from Stage 4, made human.
 
 ```
@@ -228,22 +228,34 @@ Two controls from Stage 4, made human.
 │  ( ) Cautious — hand off more│
 │  (•) Balanced (recommended) │
 │  ( ) Lean — answer more     │
-│  🔒 Safety, abuse, injuries, │
-│     custody & billing disputes│
-│     always go to a person.   │
-│                             │
-│ AI provider (for testing)   │
-│  (•) Claude · Sonnet 5      │
-│  ( ) Gemini · 3.5 Flash     │
+│  🔒 Safety, abuse, injuries/ │
+│     incidents, custody, and  │
+│     legal always go to a     │
+│     person.                  │
+└─────────────────────────────┘
+```
+
+**AI provider — bring-your-own-key config.** Not a two-way test radio: a 3-way provider picker (**Anthropic · OpenAI · Google**) where the owner pastes a per-provider API key (stored encrypted), chosen from an answerer-model select, with an **active-provider badge** and a **validity state** (key present / verified / invalid). One provider is active at a time; the others stay configured so switching is instant.
+
+```
+┌─────────────────────────────┐
+│ ‹ AI provider               │
+│  ● Anthropic   ✓ active      │
+│    key ••••••••  · valid      │
+│    model [Claude Sonnet 5 ▾] │
+│  ○ OpenAI      key set · valid│
+│    model [GPT-5 ▾]           │
+│  ○ Google      + add key      │
+│    model [Gemini Flash ▾]    │
 │  Compare results → Dashboard │
 └─────────────────────────────┘
 ```
-*Craft:* the caution dial gives the **owner ownership of the safety-vs-deflection tradeoff** (Stage 4 τ presets), with a visible floor-lock. The provider toggle makes the model-agnostic design tangible and comparable.
+*Craft:* the caution dial gives the **owner ownership of the safety-vs-deflection tradeoff** (Stage 4 τ presets), with a visible floor-lock. The bring-your-own-key provider config makes the model-agnostic design tangible — a center runs the front desk on its own account, and results stay comparable in the dashboard.
 
 ---
 
 ## 5. Component inventory (build-reuse)
-Message bubble (with provenance marker 📎/👤) · **attribution chip** (source → handbook) · starter chip · thumbs · **relay-pending indicator** ("checking with our team…◐") · stat tile (hours saved) · gap row (question + count + Add) · **relay-queue card** (waiting timer + intent + reason + "AI already shared" + reply + context-aware capture) · policy list row (status badge) · policy editor (prose + structured rows) · caution radio · provider radio.
+Message bubble (with provenance marker 📎/👤) · **attribution chip** (source → handbook) · starter chip · thumbs · **relay-pending indicator** ("checking with our team…◐") · stat tile (hours saved) · gap row (question + count + Add) · **relay-queue card** (waiting timer + intent + reason + "AI already shared" + reply + context-aware capture) · session row (Sessions tab) · policy list row (status badge, Knowledge Base tab) · policy editor (prose + structured rows) · branding controls (accent + center identity, Branding tab) · caution radio · **provider config** (3-way picker + encrypted key entry + answerer-model select + active-provider badge + validity state).
 
 ---
 

@@ -65,10 +65,10 @@ Parent asks
 
 ## 5. Intents in scope (depth targets)
 
-Handled with real policy logic, edge cases, and attribution:
+Handled with real policy logic, edge cases, and attribution. These five are the **seeded defaults, not a closed enum** — `intent` is an open-ended token with no CHECK constraint, so operators can add their own categories; the five are where we invest depth:
 
 1. **Hours & closures** — regular hours, holidays/closures, early-release, weather. (The "Are you open on Veterans Day?" class.)
-2. **Tuition & fees** — rates by age group (infant/toddler/preschool), deposits, late-pickup fees. Billing *disputes* are explicitly escalation, not answer.
+2. **Tuition & fees** — rates by age group (the center serves four bands: infant/toddler/preschool/pre-K), deposits, late-pickup fees. Billing *disputes* are explicitly escalation, not answer.
 3. **Sick-child / health policy** — illness exclusion criteria (fever thresholds, return rules). *Sensitive by design*: answer the **policy**, escalate anything that reads as diagnosis, an incident, or a specific child's medical situation.
 4. **Meals & lunch** — what's provided, allergy handling, "I forgot lunch" logistics.
 5. **Tours & enrollment** — how to schedule a tour, waitlist basics, what to bring.
@@ -81,10 +81,10 @@ Handled with real policy logic, edge cases, and attribution:
 
 Escalation triggers (any one fires):
 - **Low grounding** — retrieval confidence below threshold / no supporting policy.
-- **Sensitive category** — health specifics about a child, safety/incidents, billing disputes, complaints, anything legal/regulatory, custody/pickup-authorization.
-- **PII / identity-specific** — questions about *a particular child or account* the front desk shouldn't answer without a human.
+- **Sensitive category** — safety/abuse, incidents, health specifics about a child, billing disputes, enrollment/grievance, anything legal/regulatory, custody/pickup-authorization. (The canonical `sensitive_category` set — safety, abuse, incident, health, custody, billing, enrollment, behavior, individual, grievance, legal — lives in [09 §4.1](09-plan-review-and-consistency.md).)
+- **Individual / identity-specific** — questions about *a particular child or account* (custody, a child's individual plan) the front desk shouldn't answer without a human.
 
-Graceful escalation here means **live staff relay, not a handoff to another channel** ("resolve, don't relay"): the front desk stays one continuous voice, shares whatever general policy helps, says it's checking with the team, and the staff answer arrives **in the same thread, in real time, marked as human-sourced**. No "I'm just a bot — let me get a human" switch (which erodes trust in the AI's answers and trains parents to demand a human first), and no async "leave your number." The parent should feel *helped and still in one conversation*, never *rejected or transferred*. See [03-ux-flows.md](03-ux-flows.md) §3.3.
+Graceful escalation here means **staff relay, not a handoff to another channel** ("resolve, don't relay"): the front desk stays one continuous voice, shares whatever general policy helps, and says it's checking with the team. When the center is **online** the staff answer arrives **in the same thread, in real time, marked as human-sourced**. When the center is **Away** (off-hours), the parent leaves a contact and the answer follows up **asynchronously by email** ([11 §4.3](11-admin-settings-provider-config-and-availability.md)) — no dead-end "leave your number and we'll call." No "I'm just a bot — let me get a human" switch (which erodes trust in the AI's answers and trains parents to demand a human first). The parent should feel *helped and still in one conversation*, never *rejected or transferred*. See [03-ux-flows.md](03-ux-flows.md) §3.3.
 
 ---
 
@@ -96,7 +96,7 @@ Graceful escalation here means **live staff relay, not a handoff to another chan
 - Live staff-relay UX (one voice, in-thread, provenance-marked — see [03 §3.3](03-ux-flows.md)).
 
 **Operator control center**
-- Edit the **source of truth** (a small structured handbook/policy dataset).
+- Edit the **source of truth** (the **Knowledge Base** — a small structured set of KnowledgeEntries).
 - **Escalation queue** — the "where the system struggled" view; operator answers here.
 - **Answer → knowledge capture** — resolving an escalation can promote the answer into the source of truth.
 - Light **activity view** — what's being asked, deflected vs. escalated.
@@ -107,10 +107,10 @@ Graceful escalation here means **live staff relay, not a handoff to another chan
 - Metrics are chosen to be **industry-defensible**, not invented — see [05-quality-audit-and-metrics.md](05-quality-audit-and-metrics.md).
 
 **Grounding data**
-- Small **structured** policy/schedule dataset + a tiny handbook for one invented center. Response quality > ingestion sophistication.
+- Small **structured** Knowledge Base (policy/schedule entries) for one invented center. Response quality > ingestion sophistication.
 
 **Platform**
-- Next.js on **Railway** (always-on container), mobile-first — see the stack review [08-architecture-and-stack-review.md](08-architecture-and-stack-review.md). **Provider-agnostic model interface** (thin hand-rolled abstraction) with **two concrete implementations behind it: Claude (default) and Google Gemini (for testing/comparison)** — so we can A/B grounding and escalation behavior across providers, not just claim portability. See [04-grounding-and-prompts.md](04-grounding-and-prompts.md) §6.
+- Next.js on **Railway** (always-on container), mobile-first — see the stack review [08-architecture-and-stack-review.md](08-architecture-and-stack-review.md). **Provider-agnostic model interface** (thin hand-rolled abstraction) with **three concrete implementations behind it, neutral ids `anthropic` (default) | `openai` | `google`** — so we can A/B grounding and escalation behavior across providers, not just claim portability. See [04-grounding-and-prompts.md](04-grounding-and-prompts.md) §6.
 
 ---
 
@@ -120,7 +120,7 @@ Graceful escalation here means **live staff relay, not a handoff to another chan
 - Real auth, real parent accounts, real PII, real payments.
 - Live document ingestion / PDF parsing pipelines (a handbook page is enough grounding).
 - Multi-center / multi-tenant management, org hierarchy.
-- Real notifications (SMS/email delivery) — escalations surface *in-app*; we can *simulate* a notification, not wire a provider.
+- Real-time SMS / push notifications — live escalations surface *in-app*. (Exception, now shipped: an **Away off-hours escalation** captures the parent's email and sends an **async email follow-up** with the staff answer — see [11 §4.3](11-admin-settings-provider-config-and-availability.md). Other channels remain out.)
 - Production hardening: rate limiting, abuse, full accessibility audit, i18n. (Note: a *lightweight* audit log + computed quality metrics are **in** scope — see §7; only heavy analytics *infrastructure* is out.)
 - Fine-tuning / training a model. Grounding is retrieval + prompt, not weights.
 
@@ -152,8 +152,8 @@ These are non-goals *for the prototype*; several are natural "what's next" talki
 ## 11. Planning roadmap (artifacts in this folder)
 
 - **00-scope-and-bounds.md** ← *this doc* — thesis, users, focus, the loop, in/out of scope, eval mapping.
-- **01-data-and-knowledge-model.md** — center, PolicyRecord/Escalation/Conversation/Settings schema, grounding, attribution, persistence.
-- **02-seed-source-and-policy-map.md** — real ABQ handbook → Little Acorns PolicyRecords + sensitive-topic taxonomy.
+- **01-data-and-knowledge-model.md** — center, KnowledgeEntry/Escalation/Conversation/Settings schema, grounding, attribution, persistence.
+- **02-seed-source-and-policy-map.md** — real ABQ handbook → Little Acorns KnowledgeEntries + sensitive-topic taxonomy.
 - **03-ux-flows.md** — parent chat + starters, live staff relay, operator relay queue + context-aware capture, quality panel, caution dial + provider toggle, mobile-first.
 - **04-grounding-and-prompts.md** — single cached grounded call, escalation decision + inline verification safety net, prompts, model roles.
 - **05-quality-audit-and-metrics.md** — audit record, industry-defensible metric framework, escalation-as-classifier.

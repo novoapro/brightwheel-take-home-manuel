@@ -111,7 +111,7 @@ The asymmetry is deliberate and matches the whole system: **the strongest guardr
 | Question type | Inline checks run | Rationale |
 |---|---|---|
 | Non-sensitive, well-grounded | citation + deterministic fact-check (code only) | fast; async judge backstops |
-| Sensitive (health + sensitive_category) | + groundedness gate (Haiku); + self-consistency *(deferred, P2)* | correctness > latency here |
+| Sensitive: health intent (τ=0.9); other sensitive categories relay via hard-route / case-specific before the gate | + groundedness gate (Haiku); + self-consistency *(deferred, P2)* | correctness > latency here (see [09 §4.2–4.3](09-plan-review-and-consistency.md)) |
 | Borderline confidence | + groundedness gate | catch the risky middle |
 
 Cheap checks always; expensive checks only where the stakes justify them. Keeps the parent-facing p95 low while meeting the ≥0.9 bar where it matters.

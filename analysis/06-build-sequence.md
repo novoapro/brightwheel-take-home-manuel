@@ -11,7 +11,7 @@
 - **Deploy on day one.** Push an empty app to Railway first; prove the hosted-URL pipeline before building features. The deliverable is a *hosted* prototype — never let deploy be the last risk.
 - **Walking skeleton, then thicken.** Get one thin end-to-end slice (ask → grounded answer → deployed) working, then add depth. Every milestone leaves a deployable, demoable app.
 - **Risk-first ordering.** The differentiators — grounded answer + escalation decision + **live relay loop** — come before polish, so the hard parts are proven early.
-- **Claude-first, structured-only.** Sonnet 5 answerer, no embeddings, SQLite via better-sqlite3. Gemini is a *later toggle*, not a blocker.
+- **Claude-first, structured-only.** Sonnet 5 answerer, no embeddings, SQLite via better-sqlite3. The additional providers (OpenAI, Google) are a *later toggle*, not a blocker — Anthropic stays the default.
 - **The loop is the money shot.** Prioritize the end-to-end compounding demo (ask → relay → staff answers → capture → same question now AI-answered) over breadth.
 
 ---
@@ -19,12 +19,12 @@
 ## 2. Milestones (each is shippable)
 
 ### M0 — Walking skeleton (deploy pipeline proven)  · MUST
-- `create-next-app` (TS, App Router, Tailwind + shadcn/ui), deploy to **Railway** (git-push, persistent volume attached) → **live URL**.
+- `create-next-app` (TS, App Router, Tailwind CSS — shadcn/ui was considered but not adopted), deploy to **Railway** (git-push, persistent volume attached) → **live URL**.
 - better-sqlite3 wired to the volume; one table + a health-check page reading it.
 - **Shippable state:** a deployed page that reads the DB from a durable disk. Deploy + persistence risk = zero from here.
 
 ### M1 — Data + seed (the source of truth exists)  · MUST
-- Schema: `PolicyRecord`, `Escalation`, `InteractionAudit`, `Conversation`, `Message`, `Settings` ([01 §2](01-data-and-knowledge-model.md), [05](05-quality-audit-and-metrics.md)).
+- Schema: `KnowledgeEntry`, `Escalation`, `InteractionAudit`, `Conversation`, `Message`, `Settings` ([01 §2](01-data-and-knowledge-model.md), [05](05-quality-audit-and-metrics.md)).
 - Seed script writes the **Little Acorns policy set** from the handbook map ([02](02-seed-source-and-policy-map.md)) — real `structured` payloads (holiday calendar, tuition, illness thresholds, snow rules, meals, tours).
 - **Shippable:** DB seeded; a raw JSON debug route lists policies.
 
@@ -47,7 +47,7 @@
 
 ### M4 — Live relay + capture loop (the differentiator)  · MUST
 - Operator `/admin` (mock passcode) → **live-relay queue**; staff reply **relays into the parent thread in real time** (SSE), marked `✓ From our team` ([03](03-ux-flows.md) §3.3, §4.2).
-- **Capture:** general staff answer → one-tap promote to `PolicyRecord` (context-aware default off for case-specific).
+- **Capture:** general staff answer → one-tap promote to `KnowledgeEntry` (context-aware default off for case-specific).
 - **Shippable:** the two-pane loop demo works end-to-end — the money shot.
 
 ### M5 — Operator curation + quality panel  · SHOULD
@@ -62,8 +62,8 @@
 - **Caution-level** setting (τ presets, floor-locked HARD_SENSITIVE) ([04](04-grounding-and-prompts.md) §2).
 - **Shippable:** self-evaluating system + owner-tunable safety dial.
 
-### M7 — Second provider + polish  · COULD
-- **Gemini impl** (3.5 Flash) behind the interface + provider toggle + A/B slice in dashboard ([04](04-grounding-and-prompts.md) §6.1, [05](05-quality-audit-and-metrics.md)).
+### M7 — Additional providers + polish  · COULD
+- **OpenAI + Google impls** behind the interface (Anthropic stays default; Google via **Gemini Flash (`gemini-flash-latest` alias)**) + provider toggle + A/B slice in dashboard ([04](04-grounding-and-prompts.md) §6.1, [05](05-quality-audit-and-metrics.md), [11](11-admin-settings-provider-config-and-availability.md)).
 - Mobile/warmth polish, empty/error states, accessibility pass, copy tuning.
 - **Shippable:** provider-portability you can *see*; demo-ready finish.
 
@@ -111,7 +111,7 @@ M2 is the linchpin; **M2.5 rides on it** (the golden suite validates the guardra
 
 ## 6. Tech stack & commands (to record in CLAUDE.md at scaffold)
 
-**Stack (decided across stages; see [08](08-architecture-and-stack-review.md)):** Next.js (App Router, TS) · Tailwind + **shadcn/ui** · **SQLite via better-sqlite3** (Railway persistent volume) · **Railway** hosting (always-on container) · **`@anthropic-ai/sdk`** (Claude Sonnet 5 answerer, Haiku judge) · **`@google/genai`** (Gemini, optional M7), behind a hand-rolled provider seam · real-time via **SSE**.
+**Stack (decided across stages; see [08](08-architecture-and-stack-review.md), [11](11-admin-settings-provider-config-and-availability.md)):** Next.js (App Router, TS) · **Tailwind CSS** (shadcn/ui was considered but not adopted) · **SQLite via better-sqlite3** (Railway persistent volume) · **Railway** hosting (always-on container) · three first-class LLM providers behind a hand-rolled provider seam — **`@anthropic-ai/sdk`** (Claude Sonnet 5 answerer, Haiku judge; default), **`openai`** (GPT-5 family, optional) and **`@google/genai`** (Gemini Flash, optional) · real-time via **SSE**.
 
 **Intended commands** (finalize once scaffolded — the CLAUDE.md "Tech stack & commands" placeholder gets filled here):
 ```
@@ -125,7 +125,7 @@ npm run db:migrate     # apply schema
 npm run db:seed        # seed Little Acorns policies + historical interactions
 git push (Railway)     # deploy to hosted URL (auto-build on push)
 ```
-Env: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` (M7), `DATABASE_PATH` (points at the Railway volume), `ADMIN_PASSCODE`.
+Env: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (GPT-5 family, optional provider), `GOOGLE_API_KEY` (Gemini, optional provider), `DATABASE_PATH` (points at the Railway volume), `ADMIN_PASSCODE`.
 
 ---
 

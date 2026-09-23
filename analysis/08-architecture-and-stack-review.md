@@ -12,7 +12,7 @@ Every choice is judged against these — not fashion:
 2. **Hosted URL, trivially** — the deliverable is a *hosted* prototype.
 3. **Mobile-first web** — parents on phones.
 4. **Less-is-more / minimal deps** — scrappy, right-sized ([00](00-scope-and-bounds.md)).
-5. **Model-agnostic** — two providers (Claude default, Gemini test) behind one interface.
+5. **Model-agnostic** — three first-class providers (Anthropic default, OpenAI, Google) behind one interface ([11](11-admin-settings-provider-config-and-availability.md) is the provider-config source of truth).
 6. **Persistence for the compounding loop** — operator edits + captures must survive.
 7. **Real-time live relay** — staff answers appear in the parent thread ([03 §3.3](03-ux-flows.md)).
 8. **Defensible** — mainstream, explainable choices a panel respects.
@@ -26,10 +26,10 @@ Every choice is judged against these — not fashion:
 | Framework | **Next.js (App Router, TS)** | Best-supported React meta-framework; SSR + API in one; runs as a Node server on Railway | React Router 7 (Remix), SvelteKit, Vite SPA + Hono/Express | ✅ Keep |
 | Hosting | **Railway (container, always-on)** | Persistent volume + long-lived processes fit our two stateful needs; git-push DX | Render, Fly.io, Vercel (serverless) | ✅ **DECIDED** |
 | Persistence | **SQLite via better-sqlite3** (on a Railway volume) | Simplest possible: one local file, real FKs, durable on a persistent disk; ~1 dep, migratable | Turso/libSQL (needed only on serverless), Cloudflare D1, Neon+pgvector | ✅ **DECIDED** — Turso no longer needed |
-| Model layer | **hand-rolled provider-agnostic interface** → Claude + Gemini | Full control + provider-specific features (Anthropic caching, thinking); matches `claude-api` guidance | Vercel AI SDK (unified but coarser control), LangChain/LlamaIndex | ✅ **DECIDED** |
-| LLM SDKs | `@anthropic-ai/sdk`, `@google/genai` | Official, full provider features (caching, structured output) | Vercel AI SDK wrappers | ✅ Keep |
+| Model layer | **hand-rolled provider-agnostic interface** → Anthropic + OpenAI + Google (three first-class providers) | Full control + provider-specific features (Anthropic caching, thinking); matches `claude-api` guidance | Vercel AI SDK (unified but coarser control), LangChain/LlamaIndex | ✅ **DECIDED** (see [11](11-admin-settings-provider-config-and-availability.md)) |
+| LLM SDKs | `@anthropic-ai/sdk`, `openai`, `@google/genai` | Official, full provider features (caching, structured output) | Vercel AI SDK wrappers | ✅ Keep |
 | Real-time | **SSE (server-sent events)** | Always-on container can hold the stream; clean one-way relay (server→parent), the differentiator | Polling, WebSockets, Ably/Convex/Supabase Realtime | ✅ **DECIDED** — polling dropped |
-| UI/styling | **Tailwind (+ shadcn/ui)** | Fast, accessible, own-your-components, warm design | MUI, Chakra, plain CSS | ✅ Keep (add shadcn/ui) |
+| UI/styling | **Tailwind CSS** (shadcn/ui was considered but not adopted) | Fast, accessible, own-your-components, warm design | MUI, Chakra, plain CSS | ✅ Keep (Tailwind-only) |
 | Vectors/RAG | **none (structured-only)** | Tiny corpus; deterministic grounding beats vector RAG here ([01](01-data-and-knowledge-model.md)) | pgvector, Pinecone, LangChain RAG | ✅ Keep (deferred) |
 | Auth | **mock passcode** | Not a real product; auth is a non-goal | NextAuth/Clerk | ✅ Keep |
 | Validation | **golden eval + inline guardrails** | Own the trust proof ([07](07-hallucination-guardrails-review.md)) | RAGAS/DeepEval/Patronus as drop-ins | ✅ Keep, tools as future |
@@ -58,10 +58,10 @@ _Sources for the fast-moving layers:_ [Vercel realtime limits](https://ably.com/
 - **Alternatives:** *Polling* — the serverless-era fallback; simple but chattier and higher-latency, unnecessary now. *WebSockets* — bidirectional; overkill for a one-way relay. *Managed realtime (Ably, Convex, Supabase Realtime, Pusher)* — the answer at scale/multi-instance, adds a service we don't need for one container.
 - **Verdict:** SSE; managed-realtime is the multi-instance upgrade.
 
-### 3.4 UI: Tailwind + shadcn/ui ✅ (recommend adding shadcn/ui)
-- **Why:** Tailwind is fast and consistent; **shadcn/ui** (copy-in Radix primitives) gives accessible, own-your-code components (dialogs, inputs, tabs) that accelerate the warm, polished UI without a heavy dependency. Fits "own your components," accessibility, and the mobile-first design.
+### 3.4 UI: Tailwind CSS (shadcn/ui was considered but not adopted) ✅
+- **Why:** Tailwind is fast and consistent. **shadcn/ui** (copy-in Radix primitives) was considered to accelerate accessible components, but in the end the UI is **Tailwind-only** — no Radix, no `components/ui`, no `components.json` — which kept the dependency surface minimal while still delivering the warm, polished, own-your-code components (dialogs, inputs, tabs) by hand. Fits "own your components," accessibility, and the mobile-first design.
 - **Alternatives:** MUI/Chakra (heavier, opinionated look — harder to make feel "warm, not corporate"); plain CSS (slower).
-- **Verdict:** Keep Tailwind; add shadcn/ui.
+- **Verdict:** Keep Tailwind; shadcn/ui considered but not adopted.
 
 ### 3.5 No vector DB (structured-only) ✅
 - Consciously rejecting LangChain/LlamaIndex/pgvector RAG: our corpus is tiny and structured, so deterministic grounding + prompt caching *beats* vector RAG here ([01](01-data-and-knowledge-model.md)), and heavy RAG frameworks would add abstraction we'd fight. Vectors are the documented later step.
@@ -113,7 +113,7 @@ This is the reconsideration worth the most attention, because it directly serves
 ## 6. System architecture (target)
 
 ```
-        ┌──────────────── Browser (mobile-first, Tailwind + shadcn/ui) ───────────────┐
+        ┌──────────────── Browser (mobile-first, Tailwind CSS) ───────────────────────┐
         │  Parent  /                         Operator  /admin  (mock passcode)         │
         │  chat + guided starters            dashboard · live relay · handbook · settings│
         └───────────┬──────────────────────────────────┬──────────────────────────────┘
@@ -123,7 +123,7 @@ This is the reconsideration worth the most attention, because it directly serves
         │  Route handlers / Server Actions  (+ an SSE endpoint held open by the process)│
         │  ┌ Front-desk service ─────────────────────────────────────────────────────┐ │
         │  │  buildPrompt(cached policy prefix)                                        │ │
-        │  │     → Model layer  [hand-rolled seam → Claude Sonnet 5 | Gemini 3.5 Flash]│ │
+        │  │     → Model layer  [hand-rolled seam → Anthropic | OpenAI | Google]      │ │
         │  │     → decide() wrapper: citation · deterministic fact-check · groundedness│ │
         │  │        gate  →  answer  OR  relay(reason)                                  │ │
         │  └───────────────────────┬───────────────────────────┬─────────────────────┘ │
@@ -131,7 +131,7 @@ This is the reconsideration worth the most attention, because it directly serves
         └───────────────┬───────────┴──────────────┬────────────┴───────────────────────┘
                         │ better-sqlite3            │ LLM providers (API)
               ┌─────────▼──────────┐      ┌─────────▼───────────────────────────────────┐
-              │ SQLite file        │      │ Anthropic  ·  Google Gen AI                  │
+              │ SQLite file        │      │ Anthropic · OpenAI · Google Gen AI                  │
               │ (Railway volume)   │      └─────────────────────────────────────────────┘
               │ policies·escalations·audit·settings                                       │
               └────────────────────┘
@@ -150,10 +150,10 @@ Because we **verify before we show** ([07](07-hallucination-guardrails-review.md
 | Principle | How the stack honors it |
 |---|---|
 | Timebox / PoC | Next on Railway (git-push) = fast hosted URL; plain SQLite file + SSE, no extra services |
-| Less-is-more | one SQLite file (no Turso); no vector store; SSE (no realtime service); shadcn = no component-lib weight |
-| Model-agnostic | hand-rolled seam → one-line Claude↔Gemini swap |
+| Less-is-more | one SQLite file (no Turso); no vector store; SSE (no realtime service); Tailwind-only = no component-lib weight |
+| Model-agnostic | hand-rolled seam → one-line provider swap across Anthropic / OpenAI / Google |
 | Persistence for the loop | better-sqlite3 durable relational writes on a Railway volume |
-| Mobile-first | Next RSC + Tailwind + shadcn, phone-first |
+| Mobile-first | Next RSC + Tailwind CSS, phone-first |
 | Defensible | Every layer is a mainstream, explainable 2026 choice with named alternatives |
 
 ---
@@ -161,8 +161,8 @@ Because we **verify before we show** ([07](07-hallucination-guardrails-review.md
 ## 9. Decisions — RESOLVED
 
 1. **Hosting:** ✅ **Railway** (always-on container). Render = reliability-first fallback; Fly = max control.
-2. **Model layer:** ✅ **Hand-rolled** provider-agnostic seam over official `@anthropic-ai/sdk` + `@google/genai`.
-3. **UI kit:** ✅ **shadcn/ui on Tailwind**.
+2. **Model layer:** ✅ **Hand-rolled** provider-agnostic seam over official `@anthropic-ai/sdk` + `openai` + `@google/genai` — three first-class providers (Anthropic default, OpenAI, Google); see [11](11-admin-settings-provider-config-and-availability.md).
+3. **UI kit:** ✅ **Tailwind CSS** (shadcn/ui was considered but not adopted).
 4. **Cascades:** persistence = ✅ **better-sqlite3 on a Railway volume** (Turso dropped); real-time = ✅ **SSE** (polling dropped).
 5. Everything else in §2 settled.
 

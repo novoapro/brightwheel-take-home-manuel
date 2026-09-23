@@ -65,13 +65,13 @@ From mybrightwheel.com: clean modern sans-serif, **generous roundness**, spaciou
 ### 3.2 "Component, not site" chrome + the Powered-by footer
 - Admin stays a **panel** feel (light nav, self-contained tabs) — it's a section of Brightwheel, not its own product.
 - **"Powered by Brightwheel" footer on *both* surfaces** (parent `/` + `/handbook` **and** the admin console) — the component is a Brightwheel deployment, so it's attributed everywhere. One reusable `<PoweredByBrightwheel />`:
-  - Composition: muted `Powered by` · **Brightwheel logo mark (SVG)** · **`brightwheel` wordmark (text)**.
+  - Composition: **text-only** — muted `Powered by` · **`Brightwheel` wordmark (text)**. No SVG logo mark.
   - **Wordmark font = the website's font.** Brightwheel's site (a WordPress theme) sets its primary family to `"AvenirNext", "Helvetica Neue", helvetica, arial, sans-serif` (confirmed from the live CSS variable `--wp--preset--font-family--primary`). Render the wordmark in exactly that stack. **Avenir Next is a licensed/system font (not on Google Fonts)** — in a PoC we use the *stack* (Avenir Next is present on Apple devices; Helvetica Neue/Arial are faithful fallbacks), we do **not** embed a commercial webfont. Add it as a `--font-brand-wordmark` token so only the wordmark uses it; the rest of the app keeps its UI sans.
   - **The footer is Layer A (Brightwheel), always** — it stays blurple/neutral even on the color-themed parent surface, because it's the *platform's* mark, not the tenant's. It must not pick up `center.brand_color`.
-  - Logo asset: drop the Brightwheel mark SVG into [public/](../public/) (e.g. `public/brightwheel-mark.svg`); a plain inline SVG, no script — safe for the AI-review constraint.
+  - No image asset: the footer is text-only (wordmark font), so there is no SVG mark to source or ship — nothing lands in [public/](../public/). Safe for the AI-review constraint by construction.
 - **Favicon (browser tab / bookmark icon).** The stock Next.js icon at [src/app/favicon.ico](../src/app/favicon.ico) must be replaced — it currently ships the framework default. Two options:
   - **Default (lean, recommended):** the **Brightwheel mark** — Layer A, consistent with the Powered-by footer and the "this is a Brightwheel component" framing. Replace `src/app/favicon.ico` (App Router auto-serves it) or add `src/app/icon.svg`.
-  - **Optional flourish (per-tenant):** a dynamic `src/app/icon.tsx` using Next's `ImageResponse` to render the center's `brand_emoji` on its `brand_color` — the tab icon then white-labels with the theme. Elegant tie-in to the theming, but more than the PoC needs; note as a fork.
+  - **Optional flourish (per-tenant):** a dynamic `src/app/icon.tsx` using Next's `ImageResponse` to render the center's mark (logo, else the bell) on its `brand_color` — the tab icon then white-labels with the theme. Elegant tie-in to the theming, but more than the PoC needs; note as a fork.
   - Also refresh the `apple-touch-icon` / any PWA icons and the `<title>` favicon coherence so a bookmarked front desk looks intentional.
 
 ---
@@ -87,21 +87,20 @@ interface Center {
   // name = the BUSINESS name, e.g. "Little Acorns Early Learning Center" (already exists)
   display_name: string;      // the ASSISTANT/front-desk name parents read, e.g. "Little Acorns Front Desk" / "Ask Acorn"
   brand_color: string;       // the ONE tenant accent hex, e.g. "#4f7a5b"; drives --brand*
-  logo?: string;             // uploaded institution logo (data URI, PoC) — takes precedence over emoji
-  brand_emoji?: string;      // fallback brand mark when no logo (default "🌰")
+  logo?: string;             // uploaded institution logo (data URI, PoC) — takes precedence over the fallback mark
   welcome_message?: string;  // the parent greeting (replaces the hardcoded "Hi! I can help with…")
 }
 ```
 - **Business name vs assistant name:** `name` is the center ("Little Acorns Early Learning Center"); `display_name` is what they call the front desk ("Little Acorns Front Desk", or a persona like "Ask Acorn"). Parent header leads with the **business name** (h1) and shows the **assistant name** as the subtitle (today the subtitle is a hardcoded literal "Front Desk").
 - **`display_name` fallback:** if empty, compute `\`${name} Front Desk\``. Keeps rename safe if a tenant leaves it blank.
 - **`brand_color` validation:** must be a valid `#rrggbb`; the derive util (§5) is the guard. Invalid/empty → fall back to Brightwheel blurple.
-- **`logo` (institution logo upload):** the admin can upload the center's real logo; it renders as the brand mark in the parent header (and the assistant avatar). **Precedence:** `logo` → else `brand_emoji` → else default 🌰. Storage (PoC): a **data URI in the `logo` column**, size-capped (≈256KB) and constrained to **raster types (PNG/JPEG/WebP)** — SVG upload is disallowed (script-injection surface; matters for the AI-review constraint). No filesystem-serving concerns, works on any host; the scale path is a file on the Railway volume served by a route (fork §9).
-- **`brand_emoji`:** the 🌰 is hardcoded in **5 places** (`FrontDesk.tsx:182,292`, `handbook/page.tsx:30`, `admin/page.tsx:39,60`). It's the zero-effort default mark when no `logo` is uploaded. The admin console keeps the Brightwheel mark, not the tenant emoji/logo.
+- **`logo` (institution logo upload):** the admin can upload the center's real logo; it renders as the brand mark in the parent header (and the assistant avatar). **Precedence:** `logo` → else the app's own **Front Desk bell logo** (the `FrontDeskLogo` SVG). Storage (PoC): a **data URI in the `logo` column**, size-capped (≈256KB) and constrained to **raster types (PNG/JPEG/WebP)** — SVG upload is disallowed (script-injection surface; matters for the AI-review constraint). No filesystem-serving concerns, works on any host; the scale path is a file on the Railway volume served by a route (fork §9).
+- **Fallback mark:** when no `logo` is uploaded, the parent surfaces render the app's built-in **Front Desk bell logo** (`FrontDeskLogo` SVG) — no per-tenant emoji field. The admin console keeps the Brightwheel mark, not the tenant logo.
 - **`welcome_message`:** the greeting at `FrontDesk.tsx:254-255` is hardcoded — make it editable so a center can set its own voice (fallback = the current copy). The starter chips (`FrontDesk.tsx:30-36`) stay intent-bound for v1; editable starters are a fork (§8), not v1.
 
-**Migration:** add the new columns (`display_name`, `brand_color`, `logo`, `brand_emoji`, `welcome_message`) to the `center` table in [src/lib/schema.ts](../src/lib/schema.ts) + [scripts/migrate.ts](../scripts/migrate.ts); update `upsertCenter`/`getCenter` in [src/lib/repo/center.ts](../src/lib/repo/center.ts) to carry them. This is a PoC on a disposable SQLite file, so **re-seed** rather than write a data migration.
+**Migration:** add the new columns (`display_name`, `brand_color`, `logo`, `welcome_message`) to the `center` table in [src/lib/schema.ts](../src/lib/schema.ts) + [scripts/migrate.ts](../scripts/migrate.ts); update `upsertCenter`/`getCenter` in [src/lib/repo/center.ts](../src/lib/repo/center.ts) to carry them. This is a PoC on a disposable SQLite file, so **re-seed** rather than write a data migration.
 
-**Seed the story ([src/lib/seed/data.ts](../src/lib/seed/data.ts)):** set Little Acorns' `display_name = "Little Acorns Front Desk"`, `brand_color = "#4f7a5b"` (the *current* sage green), `brand_emoji = "🌰"`. The demo looks familiar — but the green now comes from tenant config, so **changing the color/name live in the control center becomes a one-click white-label demo** (a persuasive "watch this become another center" moment for the writeup).
+**Seed the story ([src/lib/seed/data.ts](../src/lib/seed/data.ts)):** set Little Acorns' `display_name = "Little Acorns Front Desk"`, `brand_color = "#4f7a5b"` (the *current* sage green), and no uploaded `logo` (so the demo shows the built-in Front Desk bell mark). The demo looks familiar — but the green now comes from tenant config, so **changing the color/name live in the control center becomes a one-click white-label demo** (a persuasive "watch this become another center" moment for the writeup).
 
 ---
 
@@ -136,14 +135,14 @@ Layout — an **edit form beside a live parent preview** (the moment that sells 
 ┌──────────────── Branding ─────────────────┐
 │ Business name   [Little Acorns Early …   ] │   ┌─ Live preview ─────────┐
 │ Front-desk name [Little Acorns Front Desk] │   │ [logo] Little Acorns E…│
-│ Logo            [⬆ Upload]  (or emoji 🌰)  │   │        Little Acorns F…│
+│ Logo            [⬆ Upload]  (else bell mark)│   │        Little Acorns F…│
 │ Theme color     ● ● ● ● ●  + [#4f7a5b]     │   │ ┌────────────────────┐ │
 │ Welcome message [Hi! I can help with …   ] │   │ │ Hi! I can help with│ │
 │                                            │   │ └────────────────────┘ │
 │                          [ Save changes ]  │   │ [ 🕐 Hours & closures ]│
 └────────────────────────────────────────────┘   └────────────────────────┘
 ```
-- **Logo:** upload the institution's logo (drag/file input); shows a thumbnail + "Remove" to fall back to the emoji. Client-side validation (type + size) before it's sent as a data URI. If no logo, the emoji field is the mark.
+- **Logo:** upload the institution's logo (drag/file input); shows a thumbnail + "Remove" to fall back to the built-in Front Desk bell mark. Client-side validation (type + size) before it's sent as a data URI. If no logo, the bell mark is shown.
 - **Theme color:** a row of **Brightwheel-curated preset swatches** + a custom hex input; the preview recolors instantly via `deriveTheme` (§5.2) so the owner sees contrast before saving. Presets keep non-designer SMB owners on tasteful, legible colors (less-is-more).
 - **Live preview** re-renders the actual parent header + welcome + a bubble + a starter using the pending (unsaved) values — same components, so it's truthful.
 - On **Save**, a small line reinforces the model: "Parents now see these changes." Mobile: preview stacks below the form.
@@ -159,17 +158,17 @@ Persist via a new **`PATCH /api/admin/center`** route + handler in [src/lib/admi
 |---|---|
 | [src/app/globals.css](../src/app/globals.css) | Replace warm-cream/acorn defaults with **Brightwheel plain-bg + white-card neutrals + blurple accent** (keep token *names*); add `--radius` + card shadow. Applies to the whole app. |
 | [src/lib/theme.ts](../src/lib) *(new)* + `theme.test.ts` | `deriveTheme`/contrast/hex-validate. Unit-tested. |
-| [src/lib/types.ts](../src/lib/types.ts) | Add `display_name`, `brand_color`, `logo?`, `brand_emoji?`, `welcome_message?` to `Center`; tidy "AI Front Desk" comment. |
-| [src/lib/schema.ts](../src/lib/schema.ts) + [scripts/migrate.ts](../scripts/migrate.ts) | Add the 5 new `center` columns. |
+| [src/lib/types.ts](../src/lib/types.ts) | Add `display_name`, `brand_color`, `logo?`, `welcome_message?` to `Center`; tidy "AI Front Desk" comment. |
+| [src/lib/schema.ts](../src/lib/schema.ts) + [scripts/migrate.ts](../scripts/migrate.ts) | Add the new `center` columns. |
 | [src/lib/repo/center.ts](../src/lib/repo/center.ts) | Carry new columns in upsert/select. |
-| [src/lib/seed/data.ts](../src/lib/seed/data.ts) | Seed Little Acorns display_name/green/acorn (§4). |
+| [src/lib/seed/data.ts](../src/lib/seed/data.ts) | Seed Little Acorns display_name/green, no logo (§4). |
 | [src/app/layout.tsx](../src/app/layout.tsx) | Default metadata → generic **"Front Desk"**; optionally per-center dynamic title. |
-| [src/app/page.tsx](../src/app/page.tsx) | Pass the full center identity (`name`, `display_name` + fallback, `brand_emoji`, `welcome_message`) & inject theme from `brand_color`. |
-| [src/components/FrontDesk.tsx](../src/components/FrontDesk.tsx) | Header: business `name` (h1) + assistant `display_name` (subtitle) + **brand mark** = logo img → emoji → 🌰 (drop hardcoded 🌰 at :182, :292); `Welcome` greeting from `welcome_message` (drop hardcoded copy at :254). Props widen from `centerName` to a center object. Small reusable `<BrandMark>` (logo-or-emoji). |
+| [src/app/page.tsx](../src/app/page.tsx) | Pass the full center identity (`name`, `display_name` + fallback, `logo`, `welcome_message`) & inject theme from `brand_color`. |
+| [src/components/FrontDesk.tsx](../src/components/FrontDesk.tsx) | Header: business `name` (h1) + assistant `display_name` (subtitle) + **brand mark** = logo img → the built-in Front Desk bell logo (drop hardcoded 🌰 at :182, :292); `Welcome` greeting from `welcome_message` (drop hardcoded copy at :254). Props widen from `centerName` to a center object. Small reusable `<BrandMark>` (logo-or-bell). |
 | [src/app/handbook/page.tsx](../src/app/handbook/page.tsx) | Accent injection + `<BrandMark>` (drop 🌰 at :30) + name. |
-| `src/components/admin/BrandingPanel.tsx` *(new)* + [src/app/admin/page.tsx](../src/app/admin/page.tsx) | New **Branding tab** in the nav (§5.1): edit form (business name, front-desk name, **logo upload**, emoji fallback, theme presets+hex, welcome) beside a **live parent preview**. Admin header keeps the Brightwheel mark (drop 🌰 at :39, :60). |
+| `src/components/admin/BrandingPanel.tsx` *(new)* + [src/app/admin/page.tsx](../src/app/admin/page.tsx) | New **Branding tab** in the nav (§5.1): edit form (business name, front-desk name, **logo upload** with bell-mark fallback, theme presets+hex, welcome) beside a **live parent preview**. Admin header keeps the Brightwheel mark (drop 🌰 at :39, :60). |
 | `src/app/api/admin/center/route.ts` *(new)* + [src/lib/admin.ts](../src/lib/admin.ts) | `GET`/`PATCH` center identity, mock-passcode gated, hex + text validated; wraps existing `upsertCenter`. |
-| `src/components/PoweredByBrightwheel.tsx` *(new)* + `public/brightwheel-mark.svg` | Reusable **Powered-by footer** (logo mark + `brightwheel` wordmark in the Avenir Next stack). Mounted on parent (`/`, `/handbook`) **and** admin. Always Layer A — not center-themed (§3.2). |
+| `src/components/PoweredByBrightwheel.tsx` *(new)* | Reusable **Powered-by footer** — text-only (`Powered by` + `Brightwheel` wordmark in the Avenir Next stack), no SVG mark/asset. Mounted on parent (`/`, `/handbook`) **and** admin. Always Layer A — not center-themed (§3.2). |
 | [globals.css](../src/app/globals.css) | Add `--font-brand-wordmark: "AvenirNext","Helvetica Neue",Helvetica,Arial,sans-serif` for the wordmark only. |
 | [src/app/favicon.ico](../src/app/favicon.ico) (+ optional `src/app/icon.svg` / `icon.tsx`) | Replace the stock Next.js favicon with the Brightwheel mark (default) or a dynamic per-center icon (fork §8b). |
 | [README.md](../README.md), [CLAUDE.md](../CLAUDE.md) | Rename to "Front Desk," describe the component framing + two-layer theming. |
@@ -195,15 +194,15 @@ Persist via a new **`PATCH /api/admin/center`** route + handler in [src/lib/admi
 **Decided this stage:**
 1. **Product name = "Front Desk"** (Brightwheel component); "AI" dropped from user-visible name.
 2. **Brightwheel base look across the whole app** (§3): plain cool-neutral background + white cards + blurple default accent, both surfaces. The tenant controls **one accent color + logo/name/copy**; the structure stays Brightwheel. Same token names throughout.
-3. **The admin console is the single place to edit everything parents see** — a dedicated **Branding tab** with a **live preview**, editing the tenant identity + copy (business name, assistant/front-desk name, **logo upload**, theme color, brand emoji, welcome message) on `Center`. `Settings` stays caution + provider.
+3. **The admin console is the single place to edit everything parents see** — a dedicated **Branding tab** with a **live preview**, editing the tenant identity + copy (business name, assistant/front-desk name, **logo upload**, theme color, welcome message) on `Center`. `Settings` stays caution + provider.
 4. **One tenant accent** → derived `--brand*` tokens with computed WCAG contrast; presets + custom input; **accent-only** (structure/canvas stays Brightwheel on both surfaces).
 5. **Little Acorns seeds its current green as its tenant color** — demo continuity + a live white-label moment.
 6. **"Powered by Brightwheel" footer on both surfaces**, always Brightwheel-branded (Layer A); wordmark in the site's **Avenir Next** stack, using the stack (not an embedded commercial webfont) in the PoC.
 
 **Open forks (resolve at build):**
 7. **Exact Brightwheel blurple hex** — confirm against official brand assets (Brandfetch was 403; working default `#6C4EE8`).
-8. **Brightwheel logo mark SVG** — source the official mark for `public/brightwheel-mark.svg` (and the favicon); until then a faithful placeholder wheel mark.
-8b. **Favicon** — static Brightwheel mark (recommended) vs. dynamic per-center `icon.tsx` from `brand_emoji` + `brand_color` (§3.2).
+8. **Brightwheel favicon mark** — the Powered-by footer is text-only (no SVG asset), so the only remaining Brightwheel mark is the **favicon** (`src/app/favicon.ico` / `icon.svg`, §3.2); source the official mark, until then a faithful placeholder wheel mark.
+8b. **Favicon** — static Brightwheel mark (recommended) vs. dynamic per-center `icon.tsx` from the center's mark + `brand_color` (§3.2).
 9. **Logo storage** — PoC uses a size-capped **raster data URI in the DB** (recommended: simplest, host-agnostic); scale path is a file on the Railway volume served by a route. Confirm the size cap (~256KB) and whether to auto-downscale on upload.
 10. **Editable starters** — v1 keeps the 5 intent-bound starters fixed; letting the admin edit starter labels/questions is a natural next step (they're wired to intents, so needs care).
 11. **Custom color guardrail** — presets-only vs. allow any hex (clamp with the contrast util). Lean allow-any, since the derive util already guarantees legibility.

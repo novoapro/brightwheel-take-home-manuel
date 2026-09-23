@@ -1,7 +1,7 @@
 # Grounding, Escalation & Prompts (Stage 4 — the trust engine)
 
 **Purpose:** Specify the LLM logic that turns a parent question into a grounded, attributed answer — or a graceful escalation. This is where "trust is the product" and "policy = answer, case = escalate" become concrete: prompts, the structured decision schema, the deterministic safety net, model roles, and self-evaluation.
-**Status:** First proposal · Date: 2026-09-22 · Language: TypeScript (`@anthropic-ai/sdk`), behind a provider-agnostic interface.
+**Status:** First proposal · Date: 2026-09-22 · Language: TypeScript (`@anthropic-ai/sdk`, plus `openai` and `@google/genai` SDKs), behind a provider-agnostic interface.
 **Depends on:** [01-data-and-knowledge-model.md](01-data-and-knowledge-model.md), [02-seed-source-and-policy-map.md](02-seed-source-and-policy-map.md), [05-quality-audit-and-metrics.md](05-quality-audit-and-metrics.md)
 
 ---
@@ -220,29 +220,31 @@ interface FrontDeskModel {
     question: string; answer: string; citedPolicies: Policy[];
   }): Promise<{ groundedness: number; answer_relevancy: number }>;
 }
-// Two shipped implementations behind this interface (call sites never change):
-//   ClaudeFrontDeskModel  — @anthropic-ai/sdk: messages.parse + output_config.format,
-//                           cache_control on the system prefix.
-//   GeminiFrontDeskModel  — @google/genai: responseSchema + responseMimeType JSON,
-//                           context caching on the system prefix.
-// A runtime flag / env var selects the active provider (default: Claude).
+// Three shipped implementations behind this interface (call sites never change):
+//   AnthropicFrontDeskModel — @anthropic-ai/sdk: messages.parse + output_config.format,
+//                             cache_control on the system prefix. (DEFAULT)
+//   OpenAIFrontDeskModel    — openai: responses/chat with a JSON schema (structured
+//                             outputs); GPT-5 / GPT-5-mini.
+//   GoogleFrontDeskModel    — @google/genai: responseSchema + responseMimeType JSON,
+//                             context caching on the system prefix.
+// The active provider is selected from operator config (default: Anthropic).
 ```
 
-### 6.1 Second implementation — Google Gemini (DECIDED: ship for testing)
-We ship a **real Gemini implementation** behind the same interface — not just a claim of portability — so we can A/B grounding and escalation behavior across providers. The design ports cleanly:
+### 6.1 Alternate implementations — OpenAI + Google (DECIDED: ship for testing)
+We ship **two real alternate implementations** — OpenAI and Google — behind the same interface, not just a claim of portability, so we can A/B grounding and escalation behavior across providers. Three adapters ship in total (Anthropic is the default). The design ports cleanly:
 
-| Concern | Claude (default) | Gemini (test) |
-|---|---|---|
-| SDK | `@anthropic-ai/sdk` | Google Gen AI SDK `@google/genai` |
-| Answerer model | Sonnet 5 | **Gemini 3.5 / 3.8 Flash** (fast, capable analog) |
-| Judge model | Haiku 4.5 | **Gemini 3.5 Flash-Lite** |
-| Structured output | `output_config.format` + `messages.parse()` | `responseSchema` / `responseJsonSchema` + `responseMimeType:"application/json"` (Zod, `.parsed`) — **same §4.2 schema** |
-| Cached prefix | `cache_control: ephemeral` | context caching (implicit on 2.x+; explicit cache = 90% input discount) |
-| Attribution | ID-based citations (§5) | **identical** — ID-based citations are provider-neutral; this is why we didn't use Anthropic-native Citations |
+| Concern | Anthropic (default) | OpenAI (test) | Google (test) |
+|---|---|---|---|
+| SDK | `@anthropic-ai/sdk` | `openai` | Google Gen AI SDK `@google/genai` |
+| Answerer model | Sonnet 5 | **GPT-5** (fast, capable analog) | **Gemini Flash** (`gemini-flash-latest`) |
+| Judge model | Haiku 4.5 | **GPT-5-mini** | **Gemini Pro / Flash-Lite** (`gemini-flash-lite-latest`) |
+| Structured output | `output_config.format` + `messages.parse()` | JSON-schema structured outputs | `responseSchema` / `responseJsonSchema` + `responseMimeType:"application/json"` (Zod, `.parsed`) — **same §4.2 schema** |
+| Cached prefix | `cache_control: ephemeral` | prompt caching (automatic) | context caching (implicit on 2.x+; explicit cache = 90% input discount) |
+| Attribution | ID-based citations (§5) | **identical** | **identical** — ID-based citations are provider-neutral; this is why we didn't use Anthropic-native Citations |
 
-**What stays provider-neutral (the whole point):** the §4 prompt text, the §4.2 output schema, the §3 deterministic wrapper, τ thresholds, and the audit/metrics. Only the thin adapter differs. Exact Gemini bindings are verified at build time against Google's docs (our Claude-specific tooling doesn't generate Gemini code).
+**What stays provider-neutral (the whole point):** the §4 prompt text, the §4.2 output schema, the §3 deterministic wrapper, τ thresholds, and the audit/metrics. Only the thin adapter differs. Exact OpenAI and Gemini bindings are verified at build time against each provider's docs (our Claude-specific tooling doesn't generate their code).
 
-**Panel value:** "provider-agnostic" is demonstrable — flip a flag, run the same seeded questions through Gemini, and compare containment / escalation / groundedness in the quality panel. Portability you can *see*, and a hedge against single-vendor risk.
+**Panel value:** "provider-agnostic" is demonstrable — switch the active provider, run the same seeded questions through OpenAI or Google, and compare containment / escalation / groundedness in the quality panel. Portability you can *see*, and a hedge against single-vendor risk.
 
 **Claude specifics** (from the `claude-api` skill, confirmed at build time):
 - Structured outputs: `output_config: { format: {...} }` + `client.messages.parse()` — *not* the deprecated `output_format`.

@@ -35,14 +35,15 @@ InteractionAudit {
                              //   "grounded" | "fact_mismatch" | "low_groundedness" |
                              //   "below_threshold" | "sensitive:<category>" | "out_of_scope" | …
   confidence                 // model/self-reported grounding confidence
-  provider                   // "claude" | "gemini"  — which impl handled it (enables A/B)
-  model                      // e.g. "claude-sonnet-5" | "gemini-3.5-flash"
+  provider                   // "anthropic" | "openai" | "google"  — which impl handled it (enables A/B)
+  model                      // e.g. "claude-sonnet-5" | "gpt-5" | "gemini-flash-latest"
   response_text              // what the parent saw
   cited_sources: [doc_id]    // attribution actually shown
   latency { first_response_ms, human_response_ms? }
   // --- labels attached later, by humans or judge ---
   checks: {                  // inline guardrail results ([04 §3](04-grounding-and-prompts.md), [07](07-hallucination-guardrails-review.md))
-    citation_valid, fact_match, groundedness_gate, self_consistency  // pass|fail|skipped
+    citation_valid, fact_match, groundedness_gate  // pass|fail|skipped
+    // self_consistency      // future work — not implemented in v1
   }
   parent_feedback: "up" | "down" | null
   operator_disposition: {    // set when an operator reviews/answers
@@ -126,7 +127,7 @@ Quality metrics need ground truth. Three sources, in increasing cost:
 - **Operator control center** gains a **Quality panel**: containment vs. escalation trend, top knowledge gaps, escalation-decision health (the confusion-matrix cells), and the hours-saved number.
 - The escalation queue *is* the audit trail made actionable — reviewing it is what generates labels.
 - Everything stays lightweight (computed over the seed + session data), consistent with the prototype non-goals — **no heavy analytics infrastructure**, just honest metrics over the audit log.
-- **Provider A/B (bonus):** since the audit record logs which model provider handled each interaction, the same metrics (containment, escalation precision/recall, groundedness) can be sliced **Claude vs. Gemini** — making the provider-agnostic design ([04 §6.1](04-grounding-and-prompts.md)) something you can *measure*, not just assert.
+- **Provider A/B (bonus):** since the audit record logs which model provider handled each interaction, the same metrics (containment, escalation precision/recall, groundedness) can be sliced **across configured providers** (Anthropic / OpenAI / Google) — making the provider-agnostic design ([04 §6.1](04-grounding-and-prompts.md)) something you can *measure*, not just assert.
 
 ---
 
