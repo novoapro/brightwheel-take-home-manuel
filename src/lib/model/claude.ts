@@ -1,7 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod";
-import { SENSITIVE_CATEGORIES } from "../types";
 import type {
   FrontDeskModel,
   GroundedAnswerInput,
@@ -9,6 +7,13 @@ import type {
   JudgeInput,
   JudgeResult,
 } from "./types";
+import {
+  GroundedResultSchema,
+  JudgeSchema,
+  JUDGE_SYSTEM_PROMPT,
+  formatJudgeSources,
+  formatJudgeUser,
+} from "./shared";
 
 /**
  * Claude implementation of the FrontDeskModel seam (analysis/04 §6).
@@ -19,23 +24,8 @@ import type {
  * Sonnet 5 is latency/cost-right for a grounded FAQ chat; Opus stays reachable
  * via this same seam for hard cases.
  */
-export const ANSWERER_MODEL = "claude-sonnet-5";
-export const JUDGE_MODEL = "claude-haiku-4-5";
-
-const GroundedResultSchema = z.object({
-  intent: z.enum(["hours", "tuition", "health", "meals", "tours", "out_of_scope"]),
-  is_case_specific: z.boolean(),
-  sensitive_category: z.enum(SENSITIVE_CATEGORIES).nullable(),
-  grounding_confidence: z.number().min(0).max(1),
-  citations: z.array(z.string()),
-  answer_intent: z.enum(["answer", "escalate"]),
-  parent_message: z.string(),
-});
-
-const JudgeSchema = z.object({
-  groundedness: z.number().min(0).max(1),
-  answer_relevancy: z.number().min(0).max(1),
-});
+const ANSWERER_MODEL = "claude-sonnet-5";
+const JUDGE_MODEL = "claude-haiku-4-5";
 
 export interface ClaudeConfig {
   /** Explicit key (from decrypted DB creds); falls back to env when absent. */
@@ -73,7 +63,7 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
           cache_control: { type: "ephemeral" },
         },
       ],
-      messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: input.messages,
       output_config: {
         effort: "low",
         format: zodOutputFormat(GroundedResultSchema),
@@ -88,27 +78,16 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
   }
 
   async judgeGroundedness(input: JudgeInput): Promise<JudgeResult> {
-    const sources = input.citedPolicies
-      .map(
-        (p) =>
-          `[${p.id}] ${p.title}\n${p.body_md}\ndata: ${JSON.stringify(
-            p.structured,
-          )}`,
-      )
-      .join("\n\n");
+    const sources = formatJudgeSources(input.citedPolicies);
 
     const response = await this.client.messages.parse({
       model: this.judgeModel,
       max_tokens: 500,
-      system:
-        "You grade whether an assistant's answer is fully supported by the provided policy sources. " +
-        "groundedness = the fraction of the answer's factual claims that are directly supported by the SOURCES (0..1); " +
-        "an answer that states any fact not in the sources scores low. " +
-        "answer_relevancy = how well the answer addresses the QUESTION (0..1).",
+      system: JUDGE_SYSTEM_PROMPT,
       messages: [
         {
           role: "user",
-          content: `QUESTION:\n${input.question}\n\nANSWER:\n${input.answer}\n\nSOURCES:\n${sources}`,
+          content: formatJudgeUser(input.question, input.answer, sources),
         },
       ],
       output_config: {

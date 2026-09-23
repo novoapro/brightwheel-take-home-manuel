@@ -114,11 +114,6 @@ class RelayBus {
     return this.presenceHandlers.size;
   }
 
-  /** Number of live presence subscribers (used in tests). */
-  presenceSubscriberCount(): number {
-    return this.presenceHandlers.size;
-  }
-
   /** Subscribe to waiting-relay count changes (the operator shell). */
   subscribeQueue(handler: QueueHandler): () => void {
     this.queueHandlers.add(handler);
@@ -134,11 +129,6 @@ class RelayBus {
         /* a broken subscriber must not stop the others */
       }
     }
-    return this.queueHandlers.size;
-  }
-
-  /** Number of live queue subscribers (used in tests). */
-  queueSubscriberCount(): number {
     return this.queueHandlers.size;
   }
 }

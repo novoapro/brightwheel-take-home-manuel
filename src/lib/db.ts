@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { migrate, SCHEMA_VERSION } from "./schema";
+import { countEntries } from "./repo/knowledge";
 
 /**
  * Single better-sqlite3 connection for the app.
@@ -61,16 +62,12 @@ export function getHealth(): Health {
       | { value: string }
       | undefined)?.value ?? null;
 
-  const entryCount = (
-    db.prepare(`SELECT COUNT(*) AS n FROM knowledge_entries`).get() as { n: number }
-  ).n;
-
   return {
     ok: true,
     dbPath: DB_PATH,
     app: row("app"),
     schemaVersion: row("schema_version") ?? String(SCHEMA_VERSION),
-    entryCount,
+    entryCount: countEntries(db),
     now: new Date().toISOString(),
   };
 }

@@ -9,6 +9,7 @@ import SettingsPanel from "@/components/admin/SettingsPanel";
 import BrandingPanel from "@/components/admin/BrandingPanel";
 import PoweredByBrightwheel from "@/components/PoweredByBrightwheel";
 import FrontDeskLogo from "@/components/FrontDeskLogo";
+import { adminFetch } from "@/components/admin/adminFetch";
 
 /**
  * Operator control center (analysis/03 §4). Mock passcode gate (§9), then a
@@ -146,7 +147,7 @@ export default function AdminPage() {
   // (analysis/11 §4.1) — no more re-typing every session.
   useEffect(() => {
     if (!authCode) return;
-    fetch("/api/admin/settings", { headers: { "x-admin-passcode": authCode } })
+    adminFetch("/api/admin/settings", authCode)
       .then((r) => r.json())
       .then((d) => {
         if (!d.ok) return;
@@ -184,9 +185,8 @@ export default function AdminPage() {
     availability?: "online" | "away";
     offline_at?: string | null;
   }): Promise<string | undefined> {
-    const res = await fetch("/api/admin/settings", {
+    const res = await adminFetch("/api/admin/settings", authCode!, {
       method: "PUT",
-      headers: { "content-type": "application/json", "x-admin-passcode": authCode! },
       body: JSON.stringify(patch),
     });
     const d = await res.json().catch(() => ({ ok: false }));
@@ -200,9 +200,7 @@ export default function AdminPage() {
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setError(undefined);
-    const res = await fetch("/api/admin/dashboard", {
-      headers: { "x-admin-passcode": passcode },
-    });
+    const res = await adminFetch("/api/admin/dashboard", passcode);
     if (res.status === 401) {
       setError("Invalid passcode.");
       return;

@@ -1,7 +1,5 @@
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { z } from "zod";
-import { SENSITIVE_CATEGORIES } from "../types";
 import type {
   FrontDeskModel,
   GroundedAnswerInput,
@@ -9,6 +7,13 @@ import type {
   JudgeInput,
   JudgeResult,
 } from "./types";
+import {
+  GroundedResultSchema,
+  JudgeSchema,
+  JUDGE_SYSTEM_PROMPT,
+  formatJudgeSources,
+  formatJudgeUser,
+} from "./shared";
 
 /**
  * OpenAI implementation of the FrontDeskModel seam (analysis/11 §3.4). Same §4
@@ -19,23 +24,8 @@ import type {
  * Model ids are the GPT-5 family (registry defaults); confirm exact ids against
  * OpenAI's docs at build.
  */
-export const OPENAI_ANSWERER_MODEL = "gpt-5";
-export const OPENAI_JUDGE_MODEL = "gpt-5-mini";
-
-const GroundedResultSchema = z.object({
-  intent: z.enum(["hours", "tuition", "health", "meals", "tours", "out_of_scope"]),
-  is_case_specific: z.boolean(),
-  sensitive_category: z.enum(SENSITIVE_CATEGORIES).nullable(),
-  grounding_confidence: z.number().min(0).max(1),
-  citations: z.array(z.string()),
-  answer_intent: z.enum(["answer", "escalate"]),
-  parent_message: z.string(),
-});
-
-const JudgeSchema = z.object({
-  groundedness: z.number().min(0).max(1),
-  answer_relevancy: z.number().min(0).max(1),
-});
+const OPENAI_ANSWERER_MODEL = "gpt-5";
+const OPENAI_JUDGE_MODEL = "gpt-5-mini";
 
 export interface OpenAIConfig {
   apiKey?: string;
@@ -75,27 +65,15 @@ export class OpenAIFrontDeskModel implements FrontDeskModel {
   }
 
   async judgeGroundedness(input: JudgeInput): Promise<JudgeResult> {
-    const sources = input.citedPolicies
-      .map(
-        (p) =>
-          `[${p.id}] ${p.title}\n${p.body_md}\ndata: ${JSON.stringify(p.structured)}`,
-      )
-      .join("\n\n");
+    const sources = formatJudgeSources(input.citedPolicies);
 
     const completion = await this.client.chat.completions.parse({
       model: this.judgeModel,
       messages: [
-        {
-          role: "system",
-          content:
-            "You grade whether an assistant's answer is fully supported by the provided policy sources. " +
-            "groundedness = the fraction of the answer's factual claims that are directly supported by the SOURCES (0..1); " +
-            "an answer that states any fact not in the sources scores low. " +
-            "answer_relevancy = how well the answer addresses the QUESTION (0..1).",
-        },
+        { role: "system", content: JUDGE_SYSTEM_PROMPT },
         {
           role: "user",
-          content: `QUESTION:\n${input.question}\n\nANSWER:\n${input.answer}\n\nSOURCES:\n${sources}`,
+          content: formatJudgeUser(input.question, input.answer, sources),
         },
       ],
       response_format: zodResponseFormat(JudgeSchema, "judge_result"),

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { adminFetch } from "./adminFetch";
+import { inputCls } from "./ui";
 
 type CautionLevel = "cautious" | "balanced" | "lean";
 type Settings = {
@@ -22,7 +24,7 @@ export default function SettingsPanel({ passcode }: { passcode: string }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/settings", { headers: { "x-admin-passcode": passcode } })
+    adminFetch("/api/admin/settings", passcode)
       .then((r) => r.json())
       .then((d) => d.ok && setSettings(d.settings));
   }, [passcode]);
@@ -30,9 +32,8 @@ export default function SettingsPanel({ passcode }: { passcode: string }) {
   async function patch(body: Partial<Settings>) {
     setSettings((s) => (s ? { ...s, ...body } : s));
     setSaved(false);
-    const res = await fetch("/api/admin/settings", {
+    const res = await adminFetch("/api/admin/settings", passcode, {
       method: "PUT",
-      headers: { "content-type": "application/json", "x-admin-passcode": passcode },
       body: JSON.stringify(body),
     });
     if (res.ok) {
@@ -153,7 +154,7 @@ function ProviderConfig({ passcode }: { passcode: string }) {
   const [msg, setMsg] = useState<string>();
 
   const load = useCallback(async () => {
-    const r = await fetch("/api/admin/provider", { headers: { "x-admin-passcode": passcode } });
+    const r = await adminFetch("/api/admin/provider", passcode);
     const d = await r.json();
     if (!d.ok) return;
     setData(d);
@@ -179,9 +180,8 @@ function ProviderConfig({ passcode }: { passcode: string }) {
     setBusy(true);
     setMsg(undefined);
     try {
-      const res = await fetch("/api/admin/provider", {
+      const res = await adminFetch("/api/admin/provider", passcode, {
         method: "PATCH",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({
           provider: selected,
           apiKey, // undefined = unchanged, "" = remove
@@ -282,7 +282,7 @@ function ProviderConfig({ passcode }: { passcode: string }) {
         id="model"
         value={model}
         onChange={(e) => setModel(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand"
+        className={`mt-1 ${inputCls}`}
       >
         {reg.answerers.map((m) => (
           <option key={m.id} value={m.id}>{m.label}</option>

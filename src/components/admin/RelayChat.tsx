@@ -3,17 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { INTENTS, type Intent } from "@/lib/types";
 import { useKnowledgeIntents } from "./useKnowledgeIntents";
-
-type PendingQuestion = {
-  escalationId: string;
-  question: string;
-  intent: string | null;
-  reason: string;
-  isCaseSpecific: boolean;
-  aiReferenced: string[];
-  captureDefault: boolean;
-  waitingSince: string;
-};
+import { adminFetch } from "./adminFetch";
+import type { PendingQuestion } from "./types";
 
 type ThreadMessage = {
   id: string;
@@ -27,9 +18,7 @@ type ThreadMessage = {
 };
 
 type Thread = {
-  sessionId: string | null;
   escalationId: string;
-  status: "waiting" | "answered" | "dismissed";
   delivery: "live" | "email";
   parentName: string | null;
   parentEmail: string | null;
@@ -72,9 +61,10 @@ export default function RelayChat({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/admin/relay/thread?escalationId=${escalationId}`, {
-      headers: { "x-admin-passcode": passcode },
-    });
+    const res = await adminFetch(
+      `/api/admin/relay/thread?escalationId=${escalationId}`,
+      passcode,
+    );
     const data = await res.json();
     if (data.ok) setThread(data.thread);
   }, [escalationId, passcode]);
@@ -158,9 +148,8 @@ export default function RelayChat({
     setBusy(true);
     setErr(undefined);
     try {
-      const res = await fetch("/api/admin/relay/message", {
+      const res = await adminFetch("/api/admin/relay/message", passcode, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({
           escalationId: thread.pending[0].escalationId,
           text,
@@ -185,9 +174,8 @@ export default function RelayChat({
     setBusy(true);
     setErr(undefined);
     try {
-      const res = await fetch("/api/admin/relay/answer", {
+      const res = await adminFetch("/api/admin/relay/answer", passcode, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({
           escalationId: thread.pending[0].escalationId,
           answer: draft,
@@ -212,9 +200,8 @@ export default function RelayChat({
     setBusy(true);
     setErr(undefined);
     try {
-      const res = await fetch("/api/admin/relay/dismiss", {
+      const res = await adminFetch("/api/admin/relay/dismiss", passcode, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({ escalationId: thread.pending[0].escalationId }),
       });
       const data = await res.json();
@@ -336,8 +323,8 @@ export default function RelayChat({
                     <span className="font-medium text-foreground">
                       all {pendingCount} {pendingCount === 1 ? "question" : "questions"}
                     </span>{" "}
-                    in this session.
-                    {pendingCount >= 1 && " Tap a ⏳ question above to also save its answer to the knowledge base."}
+                    in this session. Tap a ⏳ question above to also save its
+                    answer to the knowledge base.
                   </span>
                 )}
               </div>

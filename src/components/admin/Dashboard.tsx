@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { adminFetch } from "./adminFetch";
 
 type Metrics = {
   total: number;
@@ -54,13 +55,16 @@ export default function Dashboard({
 
   useEffect(() => {
     let live = true;
-    fetch(`/api/admin/dashboard?range=${range}`, { headers: { "x-admin-passcode": passcode } })
+    adminFetch(`/api/admin/dashboard?range=${range}`, passcode)
       .then((r) => r.json())
       .then((d) => {
         if (live && d.ok) {
           setM(d.metrics);
           setLoadedRange(range);
         }
+      })
+      .catch(() => {
+        /* transient fetch error — the poll-free effect retries on the next range change */
       });
     return () => {
       live = false;
@@ -112,7 +116,7 @@ export default function Dashboard({
             <p className="mt-2 text-xs opacity-80">
               {pct(m.containmentRate)} handled by the front desk AI Assistant · {pct(m.escalationRate)} to you.
             </p>
-            <p className="mt-2 text-sm opacity-00">~ {m.avgHandleMinutes} min/inquiry</p>
+            <p className="mt-2 text-sm opacity-80">~ {m.avgHandleMinutes} min/inquiry</p>
           </div>
 
           {/* Trust */}

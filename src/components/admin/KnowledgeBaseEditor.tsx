@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { INTENTS, type Intent } from "@/lib/types";
+import { adminFetch } from "./adminFetch";
+import { inputCls } from "./ui";
 
 type Entry = {
   id: string;
@@ -57,9 +59,7 @@ export default function KnowledgeBaseEditor({
   const NEW_CATEGORY = "__new__";
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/knowledge", {
-      headers: { "x-admin-passcode": passcode },
-    });
+    const res = await adminFetch("/api/admin/knowledge", passcode);
     const data = await res.json();
     if (data.ok) {
       setEntries(data.entries);
@@ -110,9 +110,8 @@ export default function KnowledgeBaseEditor({
     setSaving(true);
     setError(undefined);
     try {
-      const res = await fetch("/api/admin/knowledge", {
+      const res = await adminFetch("/api/admin/knowledge", passcode, {
         method: draft.id ? "PUT" : "POST",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({
           id: draft.id,
           intent: draft.intent,
@@ -149,9 +148,8 @@ export default function KnowledgeBaseEditor({
     setDeleting(true);
     setError(undefined);
     try {
-      const res = await fetch("/api/admin/knowledge", {
+      const res = await adminFetch("/api/admin/knowledge", passcode, {
         method: "DELETE",
-        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
         body: JSON.stringify({ id: draft.id }),
       });
       const data = await res.json();
@@ -373,9 +371,6 @@ export default function KnowledgeBaseEditor({
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand";
 
 function FilterSelect({
   label,

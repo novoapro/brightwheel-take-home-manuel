@@ -6,8 +6,6 @@ import {
   answerEscalation,
   dismissEscalation,
   getEscalation,
-  listWaitingEscalations,
-  type Escalation,
 } from "../repo/escalations";
 import { hasParentLeft } from "../repo/sessions";
 import { appendMessage } from "../repo/messages";
@@ -15,6 +13,7 @@ import { upsertEntry } from "../repo/knowledge";
 import { buildCapturedPolicy } from "./capture";
 import { getRelayBus } from "./bus";
 import { publishQueueCount } from "./queue";
+import { sessionWaiting } from "./pending";
 
 /**
  * Send a mid-relay message to the parent WITHOUT resolving the escalation — the
@@ -86,15 +85,6 @@ export function sendRelayMessage(db: Database, input: SendMessageInput): SentMes
     answeredBy,
     createdAt: message.created_at,
   };
-}
-
-/** Every still-waiting escalation from the same family as `esc` (queue grouping). */
-function sessionWaiting(db: Database, esc: Escalation, sessionId: string | null): Escalation[] {
-  return listWaitingEscalations(db).filter((e) => {
-    if (!e.interaction_id) return e.id === esc.id;
-    const s = getAuditContext(db, e.interaction_id)?.session_id ?? null;
-    return sessionId && s ? s === sessionId : e.id === esc.id;
-  });
 }
 
 /**
@@ -170,6 +160,8 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
   const commit = db.transaction(() => {
     let promotedEntryId: string | null = null;
     if (doCapture && captureEsc) {
+      // Fall back to "tours" when the operator didn't pick a category — it's the
+      // most benign general-inquiry bucket for a captured answer to land in.
       const intent: Intent = input.captureIntent ?? "tours";
       const policy = buildCapturedPolicy({
         intent,

@@ -7,6 +7,7 @@ import type {
   JudgeInput,
   JudgeResult,
 } from "./types";
+import { formatJudgeSources, formatJudgeUser } from "./shared";
 
 /**
  * Gemini implementation of the FrontDeskModel seam (analysis/04 §6.1) — the A/B
@@ -17,8 +18,8 @@ import type {
  * Model ids are env-overridable since Gemini's Flash aliases move; defaults are
  * the current fast/flash-lite aliases.
  */
-export const GEMINI_ANSWERER_MODEL = process.env.GEMINI_ANSWERER_MODEL ?? "gemini-flash-latest";
-export const GEMINI_JUDGE_MODEL = process.env.GEMINI_JUDGE_MODEL ?? "gemini-flash-lite-latest";
+const GEMINI_ANSWERER_MODEL = process.env.GEMINI_ANSWERER_MODEL ?? "gemini-flash-latest";
+const GEMINI_JUDGE_MODEL = process.env.GEMINI_JUDGE_MODEL ?? "gemini-flash-lite-latest";
 
 // JSON Schema (OpenAPI subset) mirroring the §4.2 output. sensitive_category
 // uses a "none" sentinel instead of null (cleaner for schema validators); the
@@ -118,14 +119,12 @@ export class GeminiFrontDeskModel implements FrontDeskModel {
   }
 
   async judgeGroundedness(input: JudgeInput): Promise<JudgeResult> {
-    const sources = input.citedPolicies
-      .map((p) => `[${p.id}] ${p.title}\n${p.body_md}\ndata: ${JSON.stringify(p.structured)}`)
-      .join("\n\n");
+    const sources = formatJudgeSources(input.citedPolicies);
 
     const response = await this.ai.models.generateContent({
       model: this.judgeModel,
       contents: [
-        { role: "user", parts: [{ text: `QUESTION:\n${input.question}\n\nANSWER:\n${input.answer}\n\nSOURCES:\n${sources}` }] },
+        { role: "user", parts: [{ text: formatJudgeUser(input.question, input.answer, sources) }] },
       ],
       config: {
         systemInstruction:

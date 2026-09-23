@@ -1,11 +1,16 @@
 import type { Database } from "better-sqlite3";
-import { getAudit, getAuditContext } from "../repo/audit";
-import { getEscalation, listWaitingEscalations } from "../repo/escalations";
+import { getAuditContext } from "../repo/audit";
+import { getEscalation } from "../repo/escalations";
 import { listMessages } from "../repo/messages";
 import { getEntry } from "../repo/knowledge";
 import { getParentSession, hasParentLeft } from "../repo/sessions";
 import type { DetectedIntent, EscalationDelivery } from "../types";
-import { captureDefaultFor } from "./capture";
+import {
+  aiReferencedFor,
+  sessionWaiting,
+  toPendingQuestion,
+  type PendingQuestion,
+} from "./pending";
 
 /**
  * The full conversation behind a live relay, from the operator's side. The
@@ -35,18 +40,6 @@ export interface ThreadMessage {
   createdAt: string;
 }
 
-/** One unanswered question in this session — a still-waiting escalation. */
-export interface PendingQuestion {
-  escalationId: string;
-  question: string;
-  intent: DetectedIntent | null;
-  reason: string;
-  isCaseSpecific: boolean;
-  aiReferenced: string[];
-  captureDefault: boolean;
-  waitingSince: string;
-}
-
 export interface RelayThread {
   sessionId: string | null;
   /** The escalation the operator opened into (the session's oldest waiting one). */
@@ -69,14 +62,6 @@ export interface RelayThread {
   messages: ThreadMessage[];
 }
 
-function aiReferencedFor(db: Database, interactionId: string | null): string[] {
-  const audit = interactionId ? getAudit(db, interactionId) : null;
-  return (audit?.cited_sources ?? []).flatMap((id) => {
-    const p = getEntry(db, id);
-    return p ? [p.title] : [];
-  });
-}
-
 export function buildRelayThread(db: Database, escalationId: string): RelayThread | null {
   const esc = getEscalation(db, escalationId);
   if (!esc || !esc.interaction_id) return null;
@@ -91,13 +76,7 @@ export function buildRelayThread(db: Database, escalationId: string): RelayThrea
   // Every still-waiting question from the same family — the session's open work,
   // grouped exactly as the queue groups it. (The opening escalation may itself
   // already be answered when the operator re-opens to clear what's left.)
-  const pendingEscalations = listWaitingEscalations(db).filter((e) => {
-    if (!e.interaction_id) return e.id === esc.id;
-    const s = getAuditContext(db, e.interaction_id)?.session_id ?? null;
-    // A resolvable session on both sides groups by it; otherwise only the
-    // opened escalation qualifies (no cross-session bleed via null keys).
-    return sessionId && s ? s === sessionId : e.id === esc.id;
-  });
+  const pendingEscalations = sessionWaiting(db, esc, sessionId);
 
   // Tag the parent question that triggered each waiting escalation: its holding
   // reply (a frontdesk message carrying the escalation id, before any staff
@@ -132,16 +111,9 @@ export function buildRelayThread(db: Database, escalationId: string): RelayThrea
     createdAt: m.created_at,
   }));
 
-  const pending: PendingQuestion[] = pendingEscalations.map((e) => ({
-    escalationId: e.id,
-    question: e.question,
-    intent: e.detected_intent,
-    reason: e.reason,
-    isCaseSpecific: e.reason.startsWith("sensitive:"),
-    aiReferenced: aiReferencedFor(db, e.interaction_id),
-    captureDefault: captureDefaultFor(e.reason),
-    waitingSince: e.created_at,
-  }));
+  const pending: PendingQuestion[] = pendingEscalations.map((e) =>
+    toPendingQuestion(db, e),
+  );
 
   const session = sessionId ? getParentSession(db, sessionId) : null;
 

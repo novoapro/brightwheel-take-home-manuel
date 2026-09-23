@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { INTENTS } from "@/lib/types";
+import { adminFetch } from "./adminFetch";
 
 /**
  * The live set of knowledge-base categories (core + operator-added), for the
@@ -13,7 +14,7 @@ export function useKnowledgeIntents(passcode: string): string[] {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/admin/knowledge", { headers: { "x-admin-passcode": passcode } })
+    adminFetch("/api/admin/knowledge", passcode)
       .then((r) => r.json())
       .then((d) => {
         if (alive && d.ok && Array.isArray(d.intents) && d.intents.length) {

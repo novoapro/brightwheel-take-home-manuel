@@ -108,7 +108,12 @@ function providerSlices(audits: AuditMetricRow[]): ProviderSlice[] {
   const map = new Map<string, AuditMetricRow[]>();
   for (const a of audits) {
     const key = a.provider ?? "unknown";
-    (map.get(key) ?? map.set(key, []).get(key)!).push(a);
+    let rows = map.get(key);
+    if (!rows) {
+      rows = [];
+      map.set(key, rows);
+    }
+    rows.push(a);
   }
   if (map.size < 2) return []; // no A/B to show with a single provider
   return [...map.entries()]

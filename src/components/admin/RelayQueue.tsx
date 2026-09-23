@@ -2,17 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import RelayChat from "./RelayChat";
-
-type PendingQuestion = {
-  escalationId: string;
-  question: string;
-  intent: string | null;
-  reason: string;
-  isCaseSpecific: boolean;
-  aiReferenced: string[];
-  captureDefault: boolean;
-  waitingSince: string;
-};
+import { adminFetch } from "./adminFetch";
+import type { PendingQuestion } from "./types";
 
 type QueueItem = {
   sessionId: string;
@@ -20,8 +11,6 @@ type QueueItem = {
   parentName: string | null;
   parentEmail: string | null;
   delivery: "live" | "email";
-  contactName: string | null;
-  contactEmail: string | null;
   parentPresent: boolean;
   waitingSince: string;
   pending: PendingQuestion[];
@@ -50,9 +39,7 @@ export default function RelayQueue({
   const [openEscalationId, setOpenEscalationId] = useState<string>();
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/relay/queue", {
-      headers: { "x-admin-passcode": passcode },
-    });
+    const res = await adminFetch("/api/admin/relay/queue", passcode);
     const data = await res.json();
     if (data.ok) setQueue(data.queue);
   }, [passcode]);

@@ -6,6 +6,8 @@ import BrandMark from "@/components/BrandMark";
 import { renderMarkdownLite } from "@/lib/markdown";
 import { deriveTheme, normalizeHex } from "@/lib/theme";
 import { centerDisplayName } from "@/lib/types";
+import { adminFetch } from "./adminFetch";
+import { inputCls } from "./ui";
 
 /**
  * The Branding tab (analysis/10 §5.1) — the one place the admin edits everything
@@ -51,7 +53,7 @@ export default function BrandingPanel({ passcode }: { passcode: string }) {
   const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/center", { headers: { "x-admin-passcode": passcode } })
+    adminFetch("/api/admin/center", passcode)
       .then((r) => r.json())
       .then((d) => {
         if (d.ok) {
@@ -89,9 +91,8 @@ export default function BrandingPanel({ passcode }: { passcode: string }) {
     if (!center) return;
     setSaving(true);
     setError(undefined);
-    const res = await fetch("/api/admin/center", {
+    const res = await adminFetch("/api/admin/center", passcode, {
       method: "PATCH",
-      headers: { "content-type": "application/json", "x-admin-passcode": passcode },
       body: JSON.stringify({
         name: center.name,
         display_name: center.display_name,
@@ -129,9 +130,6 @@ export default function BrandingPanel({ passcode }: { passcode: string }) {
   const dirty = !!baseline && JSON.stringify(center) !== JSON.stringify(baseline);
   const previewDisplayName = centerDisplayName(center);
   const previewWelcome = (center.welcome_message || "").trim() || DEFAULT_WELCOME;
-
-  const inputCls =
-    "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand";
 
   return (
     <div className="flex flex-col gap-4">

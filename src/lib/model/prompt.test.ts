@@ -4,8 +4,7 @@ import { createMemoryDb } from "../db";
 import { getCenter } from "../repo/center";
 import { listPublishedEntries } from "../repo/knowledge";
 import { seedDatabase } from "../seed";
-import { buildSystemPrefix, GUIDED_STARTERS, relayMessage } from "./prompt";
-import { INTENTS } from "../types";
+import { buildSystemPrefix, relayMessage } from "./prompt";
 
 let db: Database;
 beforeEach(() => {
@@ -56,15 +55,5 @@ describe("relayMessage", () => {
 
   it("escalates urgency for hard-sensitive categories (safety → 911)", () => {
     expect(relayMessage("safety")).toContain("911");
-  });
-});
-
-describe("GUIDED_STARTERS", () => {
-  it("covers real intents with non-empty questions", () => {
-    expect(GUIDED_STARTERS.length).toBeGreaterThanOrEqual(5);
-    for (const s of GUIDED_STARTERS) {
-      expect(s.question.length).toBeGreaterThan(0);
-      expect([...INTENTS]).toContain(s.intent);
-    }
   });
 });

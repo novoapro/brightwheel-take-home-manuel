@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { adminFetch } from "./adminFetch";
 
 type Session = {
   id: string;
@@ -27,7 +28,7 @@ export default function SessionsPanel({ passcode }: { passcode: string }) {
   const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/sessions", { headers: { "x-admin-passcode": passcode } });
+    const res = await adminFetch("/api/admin/sessions", passcode);
     const d = await res.json();
     if (d.ok) setSessions(d.sessions);
   }, [passcode]);
@@ -44,9 +45,8 @@ export default function SessionsPanel({ passcode }: { passcode: string }) {
   }, [refresh]);
 
   async function close(id: string) {
-    await fetch("/api/admin/sessions", {
+    await adminFetch("/api/admin/sessions", passcode, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-admin-passcode": passcode },
       body: JSON.stringify({ sessionId: id }),
     });
     refresh();

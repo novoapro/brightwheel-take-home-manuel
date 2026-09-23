@@ -73,9 +73,6 @@ export function extractFacts(text: string): Fact[] {
 
   // Run `re` over the working copy; for each match build a [match, ...groups]
   // array, let `fn` turn it into a Fact, then blank the matched span so looser
-  // later patterns can't re-match the same characters.
-  // Run `re` over the working copy; for each match build a [match, ...groups]
-  // array, let `fn` turn it into a Fact, then blank the matched span so looser
   // later patterns can't re-match the same characters. Optional capture groups
   // may be `undefined` at runtime — callbacks guard them with truthiness checks.
   const take = (re: RegExp, fn: (m: string[]) => Fact | null) => {

@@ -82,14 +82,3 @@ export function relayMessage(category: SensitiveCategory | null): string {
       return base;
   }
 }
-
-/** Guided starter chips (analysis/04 §4.3) — one canonical question per intent. */
-export const GUIDED_STARTERS: { intent: string; label: string; question: string }[] =
-  [
-    { intent: "hours", label: "Holiday hours", question: "Are you open on Veterans Day?" },
-    { intent: "hours", label: "Late pickup", question: "What happens if I'm late picking up?" },
-    { intent: "health", label: "Fever policy", question: "What's your fever policy?" },
-    { intent: "meals", label: "Meals", question: "Do you provide lunch, or do I need to pack it?" },
-    { intent: "tuition", label: "Tuition", question: "How much is tuition?" },
-    { intent: "tours", label: "Tours", question: "How do I schedule a tour?" },
-  ];

@@ -9,7 +9,7 @@ import type {
  * Provider-agnostic model layer (analysis/04 §6). Two logical roles behind one
  * interface: the grounded **answerer** (Sonnet 5 by default) and the async
  * **groundedness judge** (Haiku 4.5). Call sites never change when the provider
- * swaps (Gemini in M7).
+ * swaps between Anthropic, OpenAI, and Google.
  */
 
 /** A single chat turn passed to the model. */
@@ -57,7 +57,7 @@ export interface JudgeInput {
   citedPolicies: KnowledgeEntry[];
 }
 
-/** The seam. Implemented by ClaudeFrontDeskModel (default) and Gemini (M7). */
+/** The seam. Implemented by the Claude (default), OpenAI, and Gemini adapters. */
 export interface FrontDeskModel {
   readonly provider: Provider;
   /** Model id used for the answerer role (logged to the audit for A/B). */
