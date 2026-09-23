@@ -606,7 +606,6 @@ function PresenceBar({ presence }: { presence: Presence }) {
     <div className="flex items-center gap-1.5 border-b border-border bg-surface px-4 py-2 text-xs text-muted">
       <span aria-hidden>🟢</span>
       <span className="font-medium text-foreground">{who}</span>
-      <span>— usually replies in real time.</span>
     </div>
   );
 }
@@ -747,7 +746,7 @@ function FrontDeskBubble({
               title={c.source ?? undefined}
               className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-1 text-xs text-brand-strong hover:bg-brand/20"
             >
-              📎 per our Handbook — {c.title} ›
+              📎 Reference: {c.title} ›
             </a>
           ))}
         </div>
@@ -757,7 +756,7 @@ function FrontDeskBubble({
       {m.relayPending && (
         <div className="ml-8 flex items-center gap-1.5 text-xs text-muted">
           <span className="animate-softpulse" aria-hidden>◐</span>
-          Checking with our team — one moment…
+          Checking with our team, one moment…
         </div>
       )}
 
