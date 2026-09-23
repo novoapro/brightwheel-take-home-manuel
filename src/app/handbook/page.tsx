@@ -69,7 +69,7 @@ export default function HandbookPage() {
             </h2>
             <div className="flex flex-col gap-5">
               {group.map((p) => (
-                <article key={p.id} id={p.id} className="scroll-mt-4 rounded-xl border border-border bg-surface p-4">
+                <article key={p.id} id={p.id} className="scroll-mt-20 rounded-xl border border-border bg-surface p-4">
                   <div className="mb-1 flex items-center gap-2">
                     <h3 className="text-[15px] font-semibold">{p.title}</h3>
                     {p.origin === "captured" && (

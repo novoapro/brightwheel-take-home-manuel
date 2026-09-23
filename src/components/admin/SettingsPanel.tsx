@@ -301,10 +301,11 @@ function ProviderConfig({ passcode }: { passcode: string }) {
 
   return (
     <section className="rounded-xl border border-border bg-surface p-4 shadow-card md:p-5">
-      <h2 className="mb-1 text-sm font-semibold">AI provider</h2>
+      <h2 className="mb-1 text-sm font-semibold">Front Desk AI Assistant</h2>
       <p className="mb-3 text-xs text-muted">
-        Bring your own key. Only one provider is active at a time; keys are
-        encrypted at rest and never shown again.
+        Choose the model provider that powers your Front Desk AI Assistant. Bring
+        your own key — only one provider is active at a time; keys are encrypted
+        at rest and never shown again.
       </p>
 
       <div className="mb-3 flex flex-col gap-2">

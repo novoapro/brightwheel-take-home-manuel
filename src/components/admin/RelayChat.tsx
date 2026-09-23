@@ -56,6 +56,12 @@ export default function RelayChat({
   const [err, setErr] = useState<string>();
   const [capture, setCapture] = useState(false);
   const [captureIntent, setCaptureIntent] = useState<Intent>("tours");
+  // Operator-editable question text saved to the KB (defaults to the parent's
+  // wording, reworded for a cleaner title & search terms), plus an inline
+  // "new category" affordance mirroring the Knowledge Base editor.
+  const [captureQuestion, setCaptureQuestion] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const intents = useKnowledgeIntents(passcode);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -124,7 +130,17 @@ export default function RelayChat({
     setCaptureIntent(
       (hint && (INTENTS as readonly string[]).includes(hint) ? hint : "tours") as Intent,
     );
+    // Seed the editable question with the parent's original wording.
+    setCaptureQuestion(selected.question);
+    setAddingCategory(false);
+    setNewCategory("");
   }, [selectedEscId, selected]);
+
+  const NEW_CATEGORY = "__new__";
+  // The category actually saved: a freshly typed one wins over the dropdown.
+  const effectiveIntent: Intent = (
+    addingCategory ? newCategory.trim().toLowerCase() : captureIntent
+  ) as Intent;
 
   const isEmail = thread?.delivery === "email";
   const awaitingContact = isEmail && !thread?.parentEmail;
@@ -135,7 +151,12 @@ export default function RelayChat({
   const willCapture = capture && canCapture;
   // A delivered reply (live/email) needs text; a marked capture needs its body.
   const needsText = livePresent || isEmail || willCapture;
-  const resolveDisabled = busy || awaitingContact || (needsText && !draft.trim());
+  // A capture also needs a question to save and, if adding one, a category name.
+  const captureIncomplete =
+    willCapture &&
+    (!captureQuestion.trim() || (addingCategory && !newCategory.trim()));
+  const resolveDisabled =
+    busy || awaitingContact || (needsText && !draft.trim()) || captureIncomplete;
 
   function toggleSelect(escId: string) {
     setSelectedEscId((cur) => (cur === escId ? undefined : escId));
@@ -181,7 +202,8 @@ export default function RelayChat({
           answer: draft,
           answeredBy: operatorName,
           captureEscalationId: willCapture ? selectedEscId : null,
-          captureIntent: willCapture ? captureIntent : undefined,
+          captureIntent: willCapture ? effectiveIntent : undefined,
+          captureQuestion: willCapture ? captureQuestion.trim() : undefined,
         }),
       });
       const data = await res.json();
@@ -306,7 +328,7 @@ export default function RelayChat({
                       <span className="font-medium text-foreground">“{selected.question}”</span>
                       {selected.aiReferenced.length > 0 && (
                         <span className="mt-0.5 block">
-                          AI already referenced: {selected.aiReferenced.join(", ")}
+                          Front Desk AI Assistant already referenced: {selected.aiReferenced.join(", ")}
                         </span>
                       )}
                       <button
@@ -359,27 +381,69 @@ export default function RelayChat({
 
               {/* Knowledge capture — only offered for a marked, non-case-specific question. */}
               {canCapture ? (
-                <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={capture}
-                    onChange={(e) => setCapture(e.target.checked)}
-                  />
-                  Save the marked answer to the knowledge base
+                <div className="mt-2 space-y-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={capture}
+                      onChange={(e) => setCapture(e.target.checked)}
+                    />
+                    Save the marked answer to the knowledge base
+                  </label>
+
                   {capture && (
-                    <select
-                      value={captureIntent}
-                      onChange={(e) => setCaptureIntent(e.target.value as Intent)}
-                      className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
-                    >
-                      {intents.map((i) => (
-                        <option key={i} value={i}>
-                          {i}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-2 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2">
+                      {/* Editable question — becomes the entry's title & search terms. */}
+                      <div>
+                        <label className="block text-xs font-medium text-foreground">
+                          Question to save
+                        </label>
+                        <p className="text-[11px] text-muted">
+                          Reword it for clarity — this becomes the entry&apos;s title and search terms.
+                        </p>
+                        <textarea
+                          value={captureQuestion}
+                          onChange={(e) => setCaptureQuestion(e.target.value)}
+                          rows={2}
+                          className="mt-1 w-full resize-none rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-brand"
+                        />
+                      </div>
+
+                      {/* Category — pick an existing one or add a brand-new one inline. */}
+                      <div>
+                        <label className="block text-xs font-medium text-foreground">Category</label>
+                        <select
+                          value={addingCategory ? NEW_CATEGORY : captureIntent}
+                          onChange={(e) => {
+                            if (e.target.value === NEW_CATEGORY) {
+                              setAddingCategory(true);
+                            } else {
+                              setAddingCategory(false);
+                              setCaptureIntent(e.target.value as Intent);
+                            }
+                          }}
+                          className="mt-1 w-full rounded border border-border bg-surface px-2 py-1 text-sm"
+                        >
+                          {intents.map((i) => (
+                            <option key={i} value={i}>
+                              {i}
+                            </option>
+                          ))}
+                          <option value={NEW_CATEGORY}>+ Add new category…</option>
+                        </select>
+                        {addingCategory && (
+                          <input
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            placeholder="e.g. transportation"
+                            autoFocus
+                            className="mt-1.5 w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-brand"
+                          />
+                        )}
+                      </div>
+                    </div>
                   )}
-                </label>
+                </div>
               ) : selected ? (
                 <p className="mt-2 text-xs text-muted">
                   This is a case-specific question — it won&apos;t be saved as general knowledge.
@@ -505,7 +569,7 @@ function Bubble({
         </span>
       ) : isAI ? (
         <span className="ml-1 flex items-center gap-1.5 text-xs font-medium text-muted">
-          <span aria-hidden>✨</span> AI assistant
+          <span aria-hidden>✨</span> Front Desk AI Assistant
         </span>
       ) : null}
       <div

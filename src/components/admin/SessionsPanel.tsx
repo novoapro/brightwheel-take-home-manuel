@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "./adminFetch";
-import { ConfirmDialog, DeleteIconButton, MutedIconButton } from "./DangerUI";
+import { ConfirmDialog, DeleteIconButton } from "./DangerUI";
 
 type Session = {
   id: string;
@@ -130,9 +130,8 @@ export default function SessionsPanel({ passcode }: { passcode: string }) {
       </div>
 
       {checked.size > 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5 text-xs">
+        <div className="flex items-center gap-2 px-1 py-1 text-xs">
           <span className="font-medium">{checked.size} selected</span>
-          <MutedIconButton onClick={() => setChecked(new Set())} label="Clear selection" />
           <div className="ml-auto">
             <DeleteIconButton onClick={() => setConfirmOpen(true)} label="Remove selected sessions" />
           </div>

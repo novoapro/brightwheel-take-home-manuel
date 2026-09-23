@@ -28,9 +28,16 @@ type DeliveryFilter = "all" | "live" | "email";
 export default function RelayQueue({
   passcode,
   operatorName,
+  relaySignal,
 }: {
   passcode: string;
   operatorName: string;
+  /**
+   * Bumped by the admin shell on every relay `queue_changed` SSE event. We
+   * re-fetch when it changes instead of polling — the shell already holds one
+   * stream open, so the queue rides it rather than opening a second connection.
+   */
+  relaySignal?: number;
 }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -44,16 +51,34 @@ export default function RelayQueue({
     if (data.ok) setQueue(data.queue);
   }, [passcode]);
 
+  // Fetch on mount and whenever the shell's relay SSE reports a queue change —
+  // no polling. `refresh` is stable (memoized on passcode), so this fires on
+  // mount and on each `relaySignal` bump.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, state set after await
     refresh();
-    const poll = setInterval(refresh, 3000);
-    const tick = setInterval(() => setNow(Date.now()), 1000);
+  }, [refresh, relaySignal]);
+
+  // A cheap catch-up when the operator returns to the tab — covers any change
+  // that doesn't move the waiting count (e.g. a parent leaving a live relay),
+  // without reintroducing a steady poll.
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
     return () => {
-      clearInterval(poll);
-      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, [refresh]);
+
+  // A 1s clock for the elapsed-time labels — display only, not a server poll.
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   if (queue.length === 0) {
     return (

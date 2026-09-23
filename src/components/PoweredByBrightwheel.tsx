@@ -11,13 +11,7 @@
 export default function PoweredByBrightwheel() {
   return (
     <footer className="flex items-center justify-center gap-1.5 py-4 text-xs text-muted">
-      <span>Powered by</span>
-      <span
-        className="font-semibold tracking-tight text-foreground/80"
-        style={{ fontFamily: "var(--font-brand-wordmark)" }}
-      >
-        Brightwheel
-      </span>
+      <span>Built with ❤️ by <b>novoa.pro@gmail.com</b></span>
     </footer>
   );
 }

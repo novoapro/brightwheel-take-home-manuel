@@ -165,6 +165,29 @@ describe("answerSession — the live relay loop (single question)", () => {
     expect(prefix).toContain(res.promotedEntryId!); // front desk can cite it next time
   });
 
+  it("saves the operator's reworded question under a brand-new category", async () => {
+    const turn = await relayTurn(new FakeModel(outOfScope()));
+    const escId = turn.message.escalationId!;
+
+    const res = answerSession(db, {
+      escalationId: escId,
+      answer: "We run a shuttle from the north side each morning.",
+      answeredBy: "Maria",
+      captureEscalationId: escId,
+      captureIntent: "transportation", // a category that didn't exist before
+      captureQuestion: "Do you offer morning shuttle transportation?",
+    });
+
+    const captured = getEntry(db, res.promotedEntryId!)!;
+    // The reworded question drives the title and search keywords, not the raw ask.
+    expect(captured.title).toBe("Do you offer morning shuttle transportation?");
+    expect(captured.keywords).toContain("shuttle");
+    expect(captured.keywords).toContain("transportation");
+    // The new category is created and groups the entry going forward.
+    expect(captured.intent).toBe("transportation");
+    expect(captured.id).toContain("transportation");
+  });
+
   it("rejects an unknown escalation or a session with nothing waiting", async () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
     expect(() => answerSession(db, { escalationId: "ghost", answer: "hi", answeredBy: "M" })).toThrow(

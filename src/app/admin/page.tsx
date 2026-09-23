@@ -117,6 +117,9 @@ export default function AdminPage() {
   // a brand-new escalation from any tab — and the dashboard widget updates live —
   // with no refetch (analysis/03 §4.2). Undefined until the first event arrives.
   const [waitingCount, setWaitingCount] = useState<number>();
+  // Bumped on every relay `queue_changed` event so the open RelayQueue can
+  // re-fetch its list off the same SSE stream instead of polling.
+  const [relayTick, setRelayTick] = useState(0);
   // Start closed so mobile never flashes the overlay open before the mount
   // effect resolves the saved preference / breakpoint.
   const [collapsed, setCollapsed] = useState(true);
@@ -185,6 +188,9 @@ export default function AdminPage() {
       } catch {
         /* ignore a malformed frame */
       }
+      // Nudge the open queue to re-fetch — bump even on a malformed count so a
+      // dropped/garbled frame still triggers a fresh pull.
+      setRelayTick((t) => t + 1);
     });
     return () => es.close();
   }, [authCode]);
@@ -399,7 +405,9 @@ export default function AdminPage() {
                 onOpenRelay={() => setTab("relay")}
               />
             )}
-            {activeTab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
+            {activeTab === "relay" && (
+              <RelayQueue passcode={authCode} operatorName={operatorName} relaySignal={relayTick} />
+            )}
             {activeTab === "sessions" && <SessionsPanel passcode={authCode} />}
             {activeTab === "audit" && <AuditPanel passcode={authCode} />}
             {activeTab === "knowledge" && <KnowledgeBaseEditor passcode={authCode} operatorName={operatorName} />}

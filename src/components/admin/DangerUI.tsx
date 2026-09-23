@@ -51,7 +51,7 @@ export function DeleteIconButton({ onClick, label }: { onClick: () => void; labe
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="grid h-8 w-8 place-items-center rounded-md border border-red-300 text-red-600 transition hover:bg-red-600/10"
+      className="grid h-8 w-8 place-items-center rounded-md text-red-600 transition hover:bg-red-600/10"
     >
       <TrashIcon />
     </button>

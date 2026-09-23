@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "./adminFetch";
-import { ConfirmDialog, DeleteIconButton, MutedIconButton } from "./DangerUI";
+import { ConfirmDialog, DeleteIconButton } from "./DangerUI";
 
 /**
  * The operator Audit surface (analysis/05 §5): browse sessions in two modes —
@@ -204,19 +204,10 @@ export default function AuditPanel({ passcode }: { passcode: string }) {
         <div className="flex flex-col gap-2">
           {/* Bulk-select bar — appears once anything is checked. */}
           {(checked.size > 0 || allSelected) && (
-            <div className="flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5 text-xs">
+            <div className="flex items-center gap-2 px-1 py-1 text-xs">
               <span className="font-medium">
                 {allSelected ? "All audit data selected" : `${checked.size} selected`}
               </span>
-              <MutedIconButton onClick={clearSelection} label="Clear selection" />
-              {!allSelected && (
-                <button
-                  onClick={() => setAllSelected(true)}
-                  className="rounded-md border border-border px-2.5 py-1 font-medium text-muted transition hover:bg-you"
-                >
-                  Select all
-                </button>
-              )}
               <div className="ml-auto">
                 <DeleteIconButton
                   onClick={() => setDeleteOpen(true)}
@@ -225,6 +216,14 @@ export default function AuditPanel({ passcode }: { passcode: string }) {
               </div>
             </div>
           )}
+
+          {/* Same select-all/deselect-all affordance as the Sessions view. */}
+          <button
+            onClick={() => (allSelected ? clearSelection() : setAllSelected(true))}
+            className="self-start text-xs text-brand-strong hover:underline"
+          >
+            {allSelected ? "Deselect all" : `Select all (${sessions.length})`}
+          </button>
 
           {sessions.map((s) => (
             <div

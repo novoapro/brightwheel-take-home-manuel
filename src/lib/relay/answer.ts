@@ -105,6 +105,11 @@ export interface AnswerSessionInput {
   captureEscalationId?: string | null;
   captureIntent?: Intent;
   captureTitle?: string;
+  /**
+   * Operator-reworded question to store instead of the parent's raw wording —
+   * drives the captured entry's title and keywords. Falls back to the original.
+   */
+  captureQuestion?: string;
 }
 
 export interface AnswerSessionResult {
@@ -163,9 +168,12 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
       // Fall back to "tours" when the operator didn't pick a category — it's the
       // most benign general-inquiry bucket for a captured answer to land in.
       const intent: Intent = input.captureIntent ?? "tours";
+      // The operator may reword the question for a cleaner title & search terms;
+      // fall back to the parent's original wording when they didn't.
+      const question = input.captureQuestion?.trim() || captureEsc.question;
       const policy = buildCapturedPolicy({
         intent,
-        question: captureEsc.question,
+        question,
         answer,
         title: input.captureTitle,
         answeredBy,

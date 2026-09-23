@@ -938,7 +938,7 @@ function FrontDeskBubble({
       ) : isAI ? (
         // AI differentiator — an automated answer grounded in the handbook.
         <div className="ml-8 flex items-center gap-1.5 text-xs font-medium text-muted">
-          <span aria-hidden>✨</span> AI assistant
+          <span aria-hidden>✨</span> Front Desk AI Assistant
         </div>
       ) : null}
       <div className="flex items-start gap-2">
@@ -972,10 +972,10 @@ function FrontDeskBubble({
               href={`/handbook#${c.id}`}
               target="_blank"
               rel="noopener noreferrer"
-              title={c.source ?? undefined}
+              title="Open our family handbook"
               className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-1 text-xs text-brand-strong hover:bg-brand/20"
             >
-              📎 Reference: {c.title} ›
+              📎 More details here ›
             </a>
           ))}
         </div>

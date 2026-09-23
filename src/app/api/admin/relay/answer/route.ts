@@ -58,6 +58,8 @@ export async function POST(request: Request) {
       captureEscalationId,
       captureIntent,
       captureTitle: typeof body.captureTitle === "string" ? body.captureTitle : undefined,
+      captureQuestion:
+        typeof body.captureQuestion === "string" ? body.captureQuestion : undefined,
     });
 
     // Away follow-up: deliver the answer by (simulated) email instead of the SSE

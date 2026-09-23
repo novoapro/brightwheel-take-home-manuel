@@ -233,10 +233,38 @@ export default function KnowledgeBaseEditor({
             Unpublished entries are kept but not served to parents.
           </p>
         )}
-        <Field label="What parents see (markdown)">
+        <Field
+          label="What parents see (markdown)"
+          info={
+            <p>
+              The source of truth for this answer. The front desk rephrases it in
+              its own warm voice — it won&apos;t quote this word-for-word — but it
+              never changes the facts.
+            </p>
+          }
+        >
           <textarea className={`${inputCls} min-h-28`} value={draft.body_md} onChange={(e) => setDraft({ ...draft, body_md: e.target.value })} />
         </Field>
-        <Field label="Structured data (JSON) — powers deterministic answers">
+        <Field
+          label="Structured data (JSON) — powers deterministic answers"
+          info={
+            <>
+              <p>
+                <span className="font-medium text-foreground">Optional, but powerful.</span>{" "}
+                A machine-readable copy of the facts in your answer — prices, ages,
+                times, dates, thresholds — as JSON key/values. The front desk
+                cross-checks every number and date it tells a parent against this
+                (and the answer text above); a figure that doesn&apos;t match is
+                blocked and sent to your team instead of shown. Leave it{" "}
+                <code className="font-mono">{"{}"}</code> if the answer has no
+                specific figures.
+              </p>
+              <p className="mt-1.5 rounded bg-you/60 px-2 py-1.5 font-mono text-[11px] text-foreground">
+                {'{ "late_fee_usd": 15, "grace_minutes": 5, "after_strikes": 3 }'}
+              </p>
+            </>
+          }
+        >
           <textarea className={`${inputCls} min-h-28 font-mono text-xs`} value={draft.structuredText} onChange={(e) => setDraft({ ...draft, structuredText: e.target.value })} />
         </Field>
         <Field label="Keywords (comma-separated)">
@@ -397,11 +425,72 @@ function FilterSelect({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  info,
+  children,
+}: {
+  label: string;
+  /** Optional explainer shown in a click-to-open ⓘ tooltip next to the label. */
+  info?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="flex flex-1 flex-col gap-1 text-sm">
-      <span className="text-xs font-medium text-muted">{label}</span>
+    <div className="flex flex-1 flex-col gap-1 text-sm">
+      <span className="flex items-center gap-1 text-xs font-medium text-muted">
+        {label}
+        {info && <InfoTip label={label}>{info}</InfoTip>}
+      </span>
       {children}
-    </label>
+    </div>
+  );
+}
+
+/**
+ * A small ⓘ affordance next to a field label: click to open a popover with the
+ * explanation (and examples). Keeps the form itself uncluttered. Click-away and
+ * Escape both dismiss it; mirrors the parent surface's presence popover.
+ */
+function InfoTip({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={`About "${label}"`}
+        className="grid h-4 w-4 place-items-center rounded-full border border-border text-[10px] font-semibold leading-none text-muted transition hover:border-brand hover:text-brand-strong"
+      >
+        i
+      </button>
+      {open && (
+        <>
+          {/* Click-away backdrop. */}
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+          <div
+            role="dialog"
+            aria-label={label}
+            className="absolute left-0 top-full z-40 mt-1.5 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-3 text-left text-xs font-normal leading-relaxed text-muted shadow-lg"
+          >
+            {children}
+          </div>
+        </>
+      )}
+    </span>
   );
 }

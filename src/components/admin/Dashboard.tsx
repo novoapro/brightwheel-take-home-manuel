@@ -114,7 +114,7 @@ export default function Dashboard({
             <p className="mt-1 text-4xl font-bold">{m.hoursSaved.toFixed(1)} hrs</p>
             <p className="text-sm opacity-90">saved at the front desk</p>
             <p className="mt-2 text-xs opacity-80">
-              {pct(m.containmentRate)} handled by the front desk AI Assistant · {pct(m.escalationRate)} to you.
+              {pct(m.containmentRate)} handled by the Front Desk AI Assistant · {pct(m.escalationRate)} to you.
             </p>
             <p className="mt-2 text-sm opacity-80">~ {m.avgHandleMinutes} min/inquiry</p>
           </div>
