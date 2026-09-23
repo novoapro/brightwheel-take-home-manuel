@@ -23,14 +23,6 @@ export type Presence = {
 const DEFAULT_WELCOME =
   "Hi! I can help with **hours, tuition, sick-day policy, meals, and tours** — with answers straight from our center. What can I help you with?";
 
-/**
- * The parent front desk chat (analysis/03 §3) — mobile-first, warm, one
- * continuous voice. Grounded answers show attribution chips + 👍/👎; uncertain
- * or case-specific turns show a warm relay-pending state ("checking with our
- * team…◐"), and the staff reply streams into the thread live over SSE, marked
- * "✓ From our team".
- */
-
 type Citation = { id: string; title: string; source: string | null };
 
 type ChatMessage = {
@@ -52,6 +44,35 @@ type ChatMessage = {
   feedback?: "up" | "down";
 };
 
+/** POST /api/session — start/resume a persisted session by identity. */
+type SessionResponse = {
+  ok: boolean;
+  error?: string;
+  sessionId?: string;
+  conversationId?: string | null;
+  messages?: ChatMessage[];
+  name?: string;
+  email?: string;
+};
+
+/** POST /api/ask — a grounded answer or a relay hand-off. */
+type AskResponse = {
+  ok: boolean;
+  error?: string;
+  sessionClosed?: boolean;
+  conversationId?: string;
+  sessionId?: string;
+  interactionId?: string;
+  decision?: "answered" | "relayed";
+  message: {
+    text: string;
+    provenance?: "grounded" | "staff" | null;
+    citations?: Citation[];
+    escalationId?: string | null;
+    delivery?: "live" | "email";
+  };
+};
+
 const STARTERS = [
   { emoji: "🕐", label: "Hours & closures", question: "Are you open on Veterans Day?" },
   { emoji: "💵", label: "Tuition & fees", question: "How much is tuition?" },
@@ -67,6 +88,13 @@ const uid = () => Math.random().toString(36).slice(2);
 type ParentProfile = { name: string; email: string };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * The parent front desk chat (analysis/03 §3) — mobile-first, warm, one
+ * continuous voice. Grounded answers show attribution chips + 👍/👎; uncertain
+ * or case-specific turns show a warm relay-pending state ("checking with our
+ * team…◐"), and the staff reply streams into the thread live over SSE, marked
+ * "✓ From our team".
+ */
 export default function FrontDesk({
   center,
   presence,
@@ -95,12 +123,14 @@ export default function FrontDesk({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, email }),
       });
-      const d = await res.json().catch(() => ({ ok: false }));
+      const d: SessionResponse = await res
+        .json()
+        .catch(() => ({ ok: false }) as SessionResponse);
       if (!res.ok || !d.ok) return d.error ?? "Could not start your session.";
       sessionId.current = d.sessionId;
       setConversationId(d.conversationId ?? undefined);
-      setMessages(Array.isArray(d.messages) ? (d.messages as ChatMessage[]) : []);
-      const p: ParentProfile = { name: d.name, email: d.email };
+      setMessages(Array.isArray(d.messages) ? d.messages : []);
+      const p: ParentProfile = { name: d.name ?? name, email: d.email ?? email };
       setProfile(p);
       setSessionNote(undefined);
       try {
@@ -127,7 +157,7 @@ export default function FrontDesk({
     }
   }, []);
 
-  async function endSession() {
+  function endSession() {
     const id = sessionId.current;
     endLocal("Your session has ended. Sign in again to start a new one.");
     if (id) {
@@ -161,16 +191,7 @@ export default function FrontDesk({
   useEffect(() => {
     const es = new EventSource("/api/presence/stream");
     es.addEventListener("presence", (e) => {
-      const p = JSON.parse((e as MessageEvent).data) as {
-        availability: "online" | "away";
-        operatorName: string;
-        awayMessage: string;
-      };
-      setPresenceState({
-        availability: p.availability,
-        operatorName: p.operatorName,
-        awayMessage: p.awayMessage,
-      });
+      setPresenceState(JSON.parse((e as MessageEvent).data) as Presence);
     });
     return () => es.close();
   }, []);
@@ -242,7 +263,7 @@ export default function FrontDesk({
           sessionId: sessionId.current,
         }),
       });
-      const data = await res.json();
+      const data: AskResponse = await res.json();
       // Session ended (closed by staff, or timed out) — send them back to sign-in.
       if (res.status === 409 || data.sessionClosed) {
         endLocal("Your session has ended. Sign in again to continue.");
@@ -357,6 +378,7 @@ export default function FrontDesk({
           <h1 className="text-sm font-semibold leading-tight">{center.name}</h1>
           <p className="text-xs text-muted">{center.displayName}</p>
         </div>
+        {profile && presenceState && <PresenceStatus presence={presenceState} />}
         <a
           href="/handbook"
           aria-label="Handbook"
@@ -384,8 +406,6 @@ export default function FrontDesk({
           </button>
         )}
       </header>
-
-      {presenceState && <PresenceBar presence={presenceState} />}
 
       {booting ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted">
@@ -584,28 +604,61 @@ function Welcome({ onPick, welcome }: { onPick: (q: string) => void; welcome: st
 }
 
 /**
- * The Online/Away status strip (analysis/11 §4.2). Online names the on-duty
- * operator so the parent sees a real person is reachable; Away is honest about
- * async follow-up. Server-rendered so there's no flash of the wrong state.
+ * The Online/Away status bubble (analysis/11 §4.2). A compact pill in the header
+ * — a colored dot + one-word status, nothing about who's on duty. Tapping it
+ * opens a small popover explaining what the status means for the parent (real-time
+ * vs. async follow-up). Kept minimal so the header stays calm.
  */
-function PresenceBar({ presence }: { presence: Presence }) {
-  if (presence.availability === "away") {
-    const note =
-      presence.awayMessage?.trim() ||
-      "I can answer common questions from our handbook. For anything I'm unsure about, leave your email and our team will follow up, usually within one business day.";
-    return (
-      <div className="border-b border-border bg-you px-4 py-2 text-xs text-muted">
-        🟡 <span className="font-medium text-foreground">Away</span> — {note}
-      </div>
-    );
-  }
-  const who = presence.operatorName
-    ? `${presence.operatorName} is at the front desk`
-    : "Online";
+function PresenceStatus({ presence }: { presence: Presence }) {
+  const [open, setOpen] = useState(false);
+  const online = presence.availability === "online";
+  const label = online ? "Online" : "Away";
+
+  const explanation = online
+    ? "A team member is at the front desk right now, so anything the front desk can't answer goes straight to a person who can reply in real time."
+    : presence.awayMessage?.trim() ||
+      "The front desk can still answer common questions from our handbook. For anything it's unsure about, leave your email and our team will follow up — usually within one business day.";
+
   return (
-    <div className="flex items-center gap-1.5 border-b border-border bg-surface px-4 py-2 text-xs text-muted">
-      <span aria-hidden>🟢</span>
-      <span className="font-medium text-foreground">{who}</span>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={`Front desk status: ${label}`}
+        className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-foreground transition hover:border-brand"
+      >
+        <span
+          aria-hidden
+          className={`h-2 w-2 rounded-full ${
+            online ? "bg-green-500 animate-softpulse" : "bg-amber-500"
+          }`}
+        />
+        {label}
+      </button>
+
+      {open && (
+        <>
+          {/* Click-away backdrop. */}
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-border bg-surface p-3 text-left shadow-lg">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <span
+                aria-hidden
+                className={`h-2 w-2 rounded-full ${online ? "bg-green-500" : "bg-amber-500"}`}
+              />
+              {label}
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted">{explanation}</p>
+          </div>
+        </>
+      )}
     </div>
   );
 }

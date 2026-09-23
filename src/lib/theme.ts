@@ -66,7 +66,7 @@ const BLACK: Rgb = [0, 0, 0];
 const WHITE: Rgb = [255, 255, 255];
 
 /** WCAG relative luminance of an sRGB color. */
-export function relativeLuminance(rgb: Rgb): number {
+function relativeLuminance(rgb: Rgb): number {
   const [r, g, b] = rgb.map((c) => {
     const cs = c / 255;
     return cs <= 0.03928 ? cs / 12.92 : Math.pow((cs + 0.055) / 1.055, 2.4);
