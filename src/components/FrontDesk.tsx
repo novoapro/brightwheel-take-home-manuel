@@ -682,7 +682,10 @@ function FrontDeskBubble({
   logo?: string;
 }) {
   const isStaff = m.provenance === "staff";
-  const isAI = m.provenance === "grounded";
+  // The AI authors every front-desk reply except a live staff relay — including
+  // the "let me check with our team" hand-off. The transient loading bubble
+  // ("Checking our handbook…") isn't a real message, so it stays unlabeled.
+  const isAI = !isStaff && !m.pending;
   return (
     <div className="flex max-w-[90%] flex-col gap-2 self-start">
       {isStaff ? (
