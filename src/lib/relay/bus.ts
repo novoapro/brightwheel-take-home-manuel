@@ -11,7 +11,7 @@
  * stays a true singleton across route handlers.
  */
 
-export interface RelayEvent {
+export interface StaffMessageEvent {
   type: "staff_message";
   conversationId: string;
   message: {
@@ -22,6 +22,15 @@ export interface RelayEvent {
     createdAt: string;
   };
 }
+
+/** The parent's session was ended server-side — the chat should reset (§6). */
+export interface SessionClosedEvent {
+  type: "session_closed";
+  conversationId: string;
+  message: { reason: "agent" | "inactivity" };
+}
+
+export type RelayEvent = StaffMessageEvent | SessionClosedEvent;
 
 /**
  * A center-wide desk-availability change (analysis/11 §4.2). Broadcast to ALL

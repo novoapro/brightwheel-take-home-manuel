@@ -47,17 +47,24 @@ export function createParentSession(
   return getParentSession(db, input.id)!;
 }
 
-/** Close a session with a reason (agent CTA, parent CTA, or timeout sweep). */
+/**
+ * Close a session with a reason (agent CTA, parent CTA, or timeout sweep).
+ * Returns the closed session (with its conversation_id) so callers can notify
+ * the parent's live stream, or null if it was already closed/absent.
+ */
 export function closeSession(
   db: Database,
   id: string,
   reason: SessionCloseReason,
-): void {
-  db.prepare(
-    `UPDATE parent_sessions
-        SET status = 'closed', closed_at = @closed_at, closed_reason = @reason
-      WHERE id = @id AND status = 'open'`,
-  ).run({ id, reason, closed_at: new Date().toISOString() });
+): ParentSession | null {
+  const res = db
+    .prepare(
+      `UPDATE parent_sessions
+          SET status = 'closed', closed_at = @closed_at, closed_reason = @reason
+        WHERE id = @id AND status = 'open'`,
+    )
+    .run({ id, reason, closed_at: new Date().toISOString() });
+  return res.changes > 0 ? getParentSession(db, id) : null;
 }
 
 /** Mark activity — keeps an open session alive. No-op on a closed session. */
@@ -67,17 +74,19 @@ export function touchSession(db: Database, id: string): void {
   ).run({ id, now: new Date().toISOString() });
 }
 
-/** Close every open session idle past the timeout; returns how many closed. */
-export function sweepStaleSessions(db: Database): number {
+/** Close every open session idle past the timeout; returns the closed sessions. */
+export function sweepStaleSessions(db: Database): ParentSession[] {
   const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
-  const res = db
-    .prepare(
-      `UPDATE parent_sessions
-          SET status = 'closed', closed_at = @now, closed_reason = 'inactivity'
-        WHERE status = 'open' AND last_active_at < @cutoff`,
-    )
-    .run({ now: new Date().toISOString(), cutoff });
-  return res.changes;
+  const stale = db
+    .prepare(`SELECT * FROM parent_sessions WHERE status = 'open' AND last_active_at < ?`)
+    .all(cutoff) as ParentSession[];
+  if (stale.length === 0) return [];
+  db.prepare(
+    `UPDATE parent_sessions
+        SET status = 'closed', closed_at = @now, closed_reason = 'inactivity'
+      WHERE status = 'open' AND last_active_at < @cutoff`,
+  ).run({ now: new Date().toISOString(), cutoff });
+  return stale;
 }
 
 /**

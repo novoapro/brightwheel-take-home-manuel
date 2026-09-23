@@ -205,8 +205,19 @@ export default function FrontDesk({
         ];
       });
     });
+    // The desk (or an inactivity sweep) ended this session — reset to sign-in.
+    es.addEventListener("session_closed", (e) => {
+      const { reason } = JSON.parse((e as MessageEvent).data) as {
+        reason: "agent" | "inactivity";
+      };
+      endLocal(
+        reason === "inactivity"
+          ? "Your session timed out. Sign in again to continue."
+          : "Your session was ended by the front desk. Sign in again to start a new one.",
+      );
+    });
     return () => es.close();
-  }, [conversationId]);
+  }, [conversationId, endLocal]);
 
   async function send(question: string) {
     const q = question.trim();

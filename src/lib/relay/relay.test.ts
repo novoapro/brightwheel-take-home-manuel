@@ -10,7 +10,7 @@ import { updateSettings } from "../repo/settings";
 import { getPolicy, listPublishedPolicies } from "../repo/policies";
 import { listMessages } from "../repo/messages";
 import { isAdmin } from "../admin";
-import { getRelayBus, type RelayEvent } from "./bus";
+import { getRelayBus, type StaffMessageEvent } from "./bus";
 import { answerRelay } from "./answer";
 import { buildRelayQueue } from "./queue";
 import { buildCapturedPolicy, captureDefaultFor, keywordsFromQuestion } from "./capture";
@@ -101,8 +101,10 @@ describe("answerRelay — the live relay loop", () => {
     const turn = await relayTurn(new FakeModel(outOfScope()));
     const escId = turn.message.escalationId!;
 
-    const received: RelayEvent[] = [];
-    const off = getRelayBus().subscribe(turn.conversationId, (e) => received.push(e));
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
 
     const res = answerRelay(db, {
       escalationId: escId,
@@ -207,8 +209,10 @@ describe("Away mode — deferred escalation + email follow-up (analysis/11 §4.3
     const escId = turn.message.escalationId!;
     setEscalationContact(db, { id: escId, contact_name: "Sam", contact_email: "sam@example.com" });
 
-    const received: RelayEvent[] = [];
-    const off = getRelayBus().subscribe(turn.conversationId, (e) => received.push(e));
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
     const res = answerRelay(db, {
       escalationId: escId,
       answer: "Yes — up to 3 half-days a week.",

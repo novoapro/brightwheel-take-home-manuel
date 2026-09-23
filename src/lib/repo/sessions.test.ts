@@ -76,7 +76,8 @@ describe("parent sessions (analysis/11 §6)", () => {
     const fresh = open("fresh@b.com");
     const stale = open("stale@b.com");
     setIdle(stale.id, SESSION_TIMEOUT_MS + 1000);
-    expect(sweepStaleSessions(db)).toBe(1);
+    const closed = sweepStaleSessions(db);
+    expect(closed.map((s) => s.id)).toEqual([stale.id]);
     const open_ = listOpenSessions(db);
     expect(open_.map((s) => s.id)).toEqual([fresh.id]);
   });
