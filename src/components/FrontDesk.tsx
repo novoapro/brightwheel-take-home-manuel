@@ -61,7 +61,12 @@ const STARTERS = [
 ];
 
 const SESSION_KEY = "la_frontdesk_session";
+const PROFILE_KEY = "la_frontdesk_profile";
 const uid = () => Math.random().toString(36).slice(2);
+
+/** Who the parent is, captured once at the start of a session (kept locally). */
+type ParentProfile = { name: string; email: string };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function FrontDesk({
   center,
@@ -74,19 +79,36 @@ export default function FrontDesk({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [presenceState, setPresenceState] = useState<Presence | undefined>(presence);
+  const [profile, setProfile] = useState<ParentProfile | null>(null);
   const [conversationId, setConversationId] = useState<string>();
   const sessionId = useRef<string | undefined>(undefined);
   const logRef = useRef<HTMLDivElement>(null);
   const started = messages.length > 0;
 
-  // Restore a session id so a returning parent keeps their thread.
+  // Restore session id + parent profile so a returning parent keeps their thread
+  // and skips the welcome form.
   useEffect(() => {
     try {
       sessionId.current = localStorage.getItem(SESSION_KEY) ?? undefined;
+      const saved = localStorage.getItem(PROFILE_KEY);
+      if (saved) {
+        const p = JSON.parse(saved) as ParentProfile;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time read of a client-only value
+        if (p?.name && p?.email) setProfile(p);
+      }
     } catch {
-      /* localStorage may be unavailable — server will mint one */
+      /* localStorage may be unavailable — the form will show */
     }
   }, []);
+
+  function startSession(p: ParentProfile) {
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+    } catch {
+      /* ignore — keep it in memory for this session */
+    }
+    setProfile(p);
+  }
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
@@ -194,10 +216,34 @@ export default function FrontDesk({
                 // Live relays wait on SSE; Away (email) waits on the contact form.
                 relayPending:
                   data.decision === "relayed" && data.message.delivery === "live",
+                // We already know who they are from the session — auto-confirm.
+                contactDone:
+                  data.message.delivery === "email" && !!profile,
+                contactEmail: profile?.email,
               }
             : msg,
         ),
       );
+
+      // Away follow-up: the session already has the parent's email, so capture it
+      // for staff silently instead of asking again.
+      if (
+        data.message.delivery === "email" &&
+        profile &&
+        data.message.escalationId
+      ) {
+        void fetch("/api/relay/contact", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            escalationId: data.message.escalationId,
+            name: profile.name,
+            email: profile.email,
+          }),
+        }).catch(() => {
+          /* best-effort — the inline form remains as a fallback */
+        });
+      }
     } catch {
       setMessages((m) =>
         m.map((msg) =>
@@ -265,6 +311,10 @@ export default function FrontDesk({
 
       {presenceState && <PresenceBar presence={presenceState} />}
 
+      {!profile ? (
+        <ParentOnboarding center={center} onStart={startSession} />
+      ) : (
+        <>
       <div
         ref={logRef}
         role="log"
@@ -326,8 +376,89 @@ export default function FrontDesk({
           ▷
         </button>
       </form>
+        </>
+      )}
 
       <PoweredByBrightwheel />
+    </div>
+  );
+}
+
+/**
+ * Session start (analysis/11 §6): a warm welcome that captures the parent's name
+ * and email before they enter the chat. Kept locally and reused so an Away
+ * follow-up can email them without asking again. Email is demo PII — validated
+ * and length-capped; it never leaves the app except via the simulated sender.
+ */
+function ParentOnboarding({
+  center,
+  onStart,
+}: {
+  center: CenterBrand;
+  onStart: (p: ParentProfile) => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string>();
+
+  function submit() {
+    const n = name.trim();
+    const e = email.trim();
+    if (!n) return setError("Please enter your full name.");
+    if (!EMAIL_RE.test(e)) return setError("Please enter a valid email.");
+    onStart({ name: n, email: e });
+  }
+
+  return (
+    <div className="flex flex-1 flex-col justify-center gap-5 px-6 py-8">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <BrandMark logo={center.logo} imgSize={40} />
+        <div>
+          <h2 className="text-lg font-semibold">Welcome to {center.name}</h2>
+          <p className="mt-1 text-sm text-muted">
+            Tell us who you are so we can help — and follow up if we&apos;re away.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <div>
+          <label htmlFor="pname" className="text-xs font-medium text-muted">Full name</label>
+          <input
+            id="pname"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jordan Rivera"
+            maxLength={120}
+            autoFocus
+            className="mt-1 w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-[15px] outline-none focus:border-brand"
+          />
+        </div>
+        <div>
+          <label htmlFor="pemail" className="text-xs font-medium text-muted">Email</label>
+          <input
+            id="pemail"
+            type="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="you@example.com"
+            maxLength={120}
+            className="mt-1 w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-[15px] outline-none focus:border-brand"
+          />
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button
+          onClick={submit}
+          className="mt-1 w-full rounded-xl bg-brand px-4 py-3 text-[15px] font-medium text-brand-fg transition hover:opacity-90"
+        >
+          Start chat
+        </button>
+        <p className="text-center text-[11px] text-muted">
+          We use this only to answer your questions. It stays with {center.name}.
+        </p>
+      </div>
     </div>
   );
 }
