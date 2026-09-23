@@ -47,6 +47,9 @@ export default function KnowledgeBaseEditor({
   const [intents, setIntents] = useState<string[]>([...INTENTS]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [addingCategory, setAddingCategory] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [sensitivityFilter, setSensitivityFilter] = useState<"all" | Entry["sensitivity"]>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | Entry["status"]>("all");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string>();
@@ -269,16 +272,77 @@ export default function KnowledgeBaseEditor({
     ...[...new Set(entries.map((e) => e.intent))].filter((i) => !intents.includes(i)),
   ];
 
+  // Every category present in the data, for the category filter dropdown.
+  const categoryOptions = groupOrder.filter((i) => entries.some((e) => e.intent === i));
+
+  const filtered = entries.filter(
+    (e) =>
+      (categoryFilter === "all" || e.intent === categoryFilter) &&
+      (sensitivityFilter === "all" || e.sensitivity === sensitivityFilter) &&
+      (statusFilter === "all" || e.status === statusFilter),
+  );
+  const filtering = categoryFilter !== "all" || sensitivityFilter !== "all" || statusFilter !== "all";
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted">{entries.length} entries · the source of truth</p>
+        <p className="text-xs text-muted">
+          {filtering ? `${filtered.length} of ${entries.length}` : entries.length} entries · the source of truth
+        </p>
         <button onClick={newEntry} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-brand">
           + New
         </button>
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        <FilterSelect label="Category" value={categoryFilter} onChange={setCategoryFilter}>
+          <option value="all">All categories</option>
+          {categoryOptions.map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          label="Sensitivity"
+          value={sensitivityFilter}
+          onChange={(v) => setSensitivityFilter(v as "all" | Entry["sensitivity"])}
+        >
+          <option value="all">Any sensitivity</option>
+          <option value="none">none</option>
+          <option value="sensitive">sensitive</option>
+        </FilterSelect>
+        <FilterSelect
+          label="Status"
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v as "all" | Entry["status"])}
+        >
+          <option value="all">Any status</option>
+          <option value="published">published</option>
+          <option value="draft">draft</option>
+          <option value="unpublished">unpublished</option>
+        </FilterSelect>
+        {filtering && (
+          <button
+            onClick={() => {
+              setCategoryFilter("all");
+              setSensitivityFilter("all");
+              setStatusFilter("all");
+            }}
+            className="self-end rounded-lg px-2 py-1.5 text-xs text-muted hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">
+          No entries match these filters.
+        </p>
+      )}
       {groupOrder.map((intent) => {
-        const group = entries.filter((p) => p.intent === intent);
+        const group = filtered.filter((p) => p.intent === intent);
         if (group.length === 0) return null;
         return (
           <section key={intent}>
@@ -312,6 +376,31 @@ export default function KnowledgeBaseEditor({
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand";
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="font-medium text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs outline-none focus:border-brand"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

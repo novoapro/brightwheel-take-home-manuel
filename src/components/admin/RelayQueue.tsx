@@ -28,6 +28,7 @@ type QueueItem = {
 };
 
 type SortDir = "longest" | "shortest";
+type DeliveryFilter = "all" | "live" | "email";
 
 /**
  * The live-relay queue (analysis/03 §4.2) — one entry per waiting family, not per
@@ -45,6 +46,7 @@ export default function RelayQueue({
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [sort, setSort] = useState<SortDir>("longest");
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("all");
   const [openEscalationId, setOpenEscalationId] = useState<string>();
 
   const refresh = useCallback(async () => {
@@ -75,9 +77,19 @@ export default function RelayQueue({
     );
   }
 
+  // Split live chat from email follow-ups so the operator can triage one channel
+  // at a time — live parents are waiting on the line, email can be batched later.
+  const liveCount = queue.filter((q) => q.delivery === "live").length;
+  const emailCount = queue.filter((q) => q.delivery === "email").length;
+
+  const filtered =
+    deliveryFilter === "all"
+      ? queue
+      : queue.filter((q) => q.delivery === deliveryFilter);
+
   // Sort by how long the family has waited. Longest-first is the default (fair
   // triage); shortest-first lets an operator clear quick wins to trim the queue.
-  const ordered = [...queue].sort((a, b) => {
+  const ordered = [...filtered].sort((a, b) => {
     const at = new Date(a.waitingSince).getTime();
     const bt = new Date(b.waitingSince).getTime();
     return sort === "longest" ? at - bt : bt - at;
@@ -85,10 +97,28 @@ export default function RelayQueue({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted">
-          {queue.length} waiting {queue.length === 1 ? "family" : "families"}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-lg border border-border bg-surface p-0.5 text-xs">
+          {(
+            [
+              ["all", `All · ${queue.length}`],
+              ["live", `🔴 Live · ${liveCount}`],
+              ["email", `📧 Email · ${emailCount}`],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setDeliveryFilter(value)}
+              className={`rounded-md px-2.5 py-1 font-medium transition ${
+                deliveryFilter === value
+                  ? "bg-you text-foreground"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <label className="flex items-center gap-1.5 text-xs text-muted">
           Sort
           <select
@@ -101,14 +131,22 @@ export default function RelayQueue({
           </select>
         </label>
       </div>
-      {ordered.map((item) => (
+
+      {ordered.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">
+          No {deliveryFilter === "live" ? "live chat" : "email"} follow-ups
+          waiting right now.
+        </p>
+      ) : (
+        ordered.map((item) => (
         <RelayCard
           key={item.sessionId}
           item={item}
           now={now}
           onOpen={() => setOpenEscalationId(item.primaryEscalationId)}
         />
-      ))}
+        ))
+      )}
 
       {openEscalationId && (
         <RelayChat
