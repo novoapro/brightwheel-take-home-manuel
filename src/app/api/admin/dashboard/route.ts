@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
-import { computeDashboard } from "@/lib/metrics";
+import { computeDashboard, isTimeRange } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 export function GET(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
   try {
-    return NextResponse.json({ ok: true, metrics: computeDashboard(getDb()) });
+    const raw = new URL(request.url).searchParams.get("range");
+    const range = isTimeRange(raw) ? raw : "week";
+    return NextResponse.json({ ok: true, range, metrics: computeDashboard(getDb(), range) });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: (err as Error).message },

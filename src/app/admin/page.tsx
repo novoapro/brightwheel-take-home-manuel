@@ -323,7 +323,13 @@ export default function AdminPage() {
 
         <div className="flex-1 px-4 py-5 md:px-6 lg:px-8 lg:py-7">
           <div className="mx-auto w-full max-w-3xl">
-            {tab === "dashboard" && <Dashboard passcode={authCode} onOpenGaps={() => setTab("handbook")} />}
+            {tab === "dashboard" && (
+              <Dashboard
+                passcode={authCode}
+                onOpenGaps={() => setTab("handbook")}
+                onOpenRelay={() => setTab("relay")}
+              />
+            )}
             {tab === "relay" && <RelayQueue passcode={authCode} operatorName={operatorName} />}
             {tab === "sessions" && <SessionsPanel passcode={authCode} />}
             {tab === "handbook" && <HandbookEditor passcode={authCode} operatorName={operatorName} />}

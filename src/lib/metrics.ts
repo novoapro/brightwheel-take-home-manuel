@@ -24,6 +24,51 @@ import type { Escalation } from "./repo/escalations";
  */
 export const AVG_HANDLE_MINUTES = 6;
 
+/**
+ * Quick date-range filter for the dashboard. The owner scopes the ROI read to a
+ * period they care about; "all" is the unbounded lifetime view. Rolling windows
+ * (week/month) keep the demo data meaningful regardless of the calendar day.
+ */
+export type TimeRange = "today" | "week" | "month" | "all";
+
+export const TIME_RANGES: { id: TimeRange; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "week", label: "This week" },
+  { id: "month", label: "Last 30 days" },
+  { id: "all", label: "All time" },
+];
+
+export function isTimeRange(v: unknown): v is TimeRange {
+  return v === "today" || v === "week" || v === "month" || v === "all";
+}
+
+/**
+ * Earliest instant included by a range, or null for "all" (no lower bound).
+ * `today` is since local midnight; week/month are rolling 7-/30-day windows.
+ */
+export function rangeStart(range: TimeRange, now = new Date()): Date | null {
+  switch (range) {
+    case "today": {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    case "week":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case "month":
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case "all":
+      return null;
+  }
+}
+
+/** Keep rows whose ISO timestamp field falls on/after the range start. */
+function withinRange<T>(rows: T[], iso: (row: T) => string, start: Date | null): T[] {
+  if (!start) return rows;
+  const floor = start.getTime();
+  return rows.filter((r) => Date.parse(iso(r)) >= floor);
+}
+
 export interface TopGap {
   question: string;
   count: number;
@@ -167,11 +212,16 @@ export function aggregate(
 
 export function computeDashboard(
   db: Database,
+  range: TimeRange = "week",
   avgHandleMinutes = AVG_HANDLE_MINUTES,
 ): DashboardMetrics {
+  const start = rangeStart(range);
+  // The period-scoped metrics filter to the selected window. `waiting` is the
+  // deliberate exception — an open escalation is current state, not a historical
+  // event, so it's always counted in full regardless of the range.
   return aggregate(
-    listAuditMetrics(db),
-    listAllEscalations(db),
+    withinRange(listAuditMetrics(db), (a) => a.timestamp, start),
+    withinRange(listAllEscalations(db), (e) => e.created_at, start),
     countCapturedPolicies(db),
     listWaitingEscalations(db).length,
     avgHandleMinutes,

@@ -3,7 +3,13 @@ import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "./db";
 import { seedDatabase } from "./seed";
 import { seedHistory } from "./seed/history";
-import { aggregate, computeDashboard, type DashboardMetrics } from "./metrics";
+import {
+  aggregate,
+  computeDashboard,
+  rangeStart,
+  isTimeRange,
+  type DashboardMetrics,
+} from "./metrics";
 import type { AuditMetricRow } from "./repo/audit";
 import type { Escalation } from "./repo/escalations";
 
@@ -138,7 +144,7 @@ describe("computeDashboard over seeded history", () => {
   });
 
   it("reflects a realistic week", () => {
-    const m = computeDashboard(db);
+    const m = computeDashboard(db, "all");
     expect(m.total).toBe(56); // 42 answered + 14 escalated
     expect(m.answered).toBe(42);
     expect(m.escalated).toBe(14);
@@ -156,5 +162,48 @@ describe("computeDashboard over seeded history", () => {
     expect(m.groundedness).not.toBeNull();
     expect(m.groundedness!).toBeGreaterThan(0.85);
     expect(m.groundedness!).toBeLessThanOrEqual(1);
+  });
+
+  it("narrows period metrics as the range tightens, but never the waiting count", () => {
+    const all = computeDashboard(db, "all");
+    const month = computeDashboard(db, "month");
+    const week = computeDashboard(db, "week");
+    const today = computeDashboard(db, "today");
+
+    // Tighter windows include no more than wider ones.
+    expect(all.total).toBeGreaterThanOrEqual(month.total);
+    expect(month.total).toBeGreaterThanOrEqual(week.total);
+    expect(week.total).toBeGreaterThanOrEqual(today.total);
+
+    // The full seed is the lifetime total; a rolling window sees a subset.
+    expect(all.total).toBe(56);
+    expect(week.total).toBeGreaterThan(0);
+
+    // Open escalations are current state — unaffected by the date filter.
+    for (const m of [all, month, week, today]) expect(m.waiting).toBe(2);
+  });
+});
+
+describe("time-range helpers", () => {
+  it("validates range identifiers", () => {
+    expect(["today", "week", "month", "all"].every(isTimeRange)).toBe(true);
+    expect(isTimeRange("year")).toBe(false);
+    expect(isTimeRange(undefined)).toBe(false);
+  });
+
+  it("computes lower bounds; 'all' is unbounded", () => {
+    const now = new Date("2026-09-22T15:30:00Z");
+    expect(rangeStart("all", now)).toBeNull();
+
+    const today = rangeStart("today", now)!;
+    expect(today.getHours()).toBe(0);
+    expect(today.getMinutes()).toBe(0);
+    expect(today.getTime()).toBeLessThanOrEqual(now.getTime());
+
+    const week = rangeStart("week", now)!;
+    const month = rangeStart("month", now)!;
+    // week starts after month; today starts after week.
+    expect(month.getTime()).toBeLessThan(week.getTime());
+    expect(week.getTime()).toBeLessThan(today.getTime());
   });
 });
