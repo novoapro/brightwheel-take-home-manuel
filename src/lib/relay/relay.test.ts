@@ -259,6 +259,33 @@ describe("buildRelayQueue", () => {
   });
 });
 
+describe("presence broadcast (analysis/11 §4.2)", () => {
+  it("delivers presence events to every subscriber and stops after unsubscribe", () => {
+    const bus = getRelayBus();
+    const got: { availability: string; operatorName: string }[] = [];
+    const off = bus.subscribePresence((e) =>
+      got.push({ availability: e.availability, operatorName: e.operatorName }),
+    );
+
+    bus.publishPresence({
+      type: "presence",
+      availability: "away",
+      operatorName: "Maria",
+      awayMessage: "",
+    });
+    expect(got).toEqual([{ availability: "away", operatorName: "Maria" }]);
+
+    off();
+    bus.publishPresence({
+      type: "presence",
+      availability: "online",
+      operatorName: "Diego",
+      awayMessage: "",
+    });
+    expect(got).toHaveLength(1); // no delivery after unsubscribe
+  });
+});
+
 describe("isAdmin", () => {
   const req = (code?: string) =>
     new Request("http://x/admin", {

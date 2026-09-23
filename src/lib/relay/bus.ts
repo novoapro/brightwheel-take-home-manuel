@@ -23,10 +23,24 @@ export interface RelayEvent {
   };
 }
 
+/**
+ * A center-wide desk-availability change (analysis/11 §4.2). Broadcast to ALL
+ * connected parents — not per-conversation — so the status pill updates live the
+ * instant an operator opens/closes the desk or changes who's on duty.
+ */
+export interface PresenceEvent {
+  type: "presence";
+  availability: "online" | "away";
+  operatorName: string;
+  awayMessage: string;
+}
+
 type Handler = (event: RelayEvent) => void;
+type PresenceHandler = (event: PresenceEvent) => void;
 
 class RelayBus {
   private subscribers = new Map<string, Set<Handler>>();
+  private presenceHandlers = new Set<PresenceHandler>();
 
   subscribe(conversationId: string, handler: Handler): () => void {
     let set = this.subscribers.get(conversationId);
@@ -59,6 +73,29 @@ class RelayBus {
   /** Number of live subscribers for a conversation (used in tests). */
   subscriberCount(conversationId: string): number {
     return this.subscribers.get(conversationId)?.size ?? 0;
+  }
+
+  /** Subscribe to center-wide presence changes (all parents). */
+  subscribePresence(handler: PresenceHandler): () => void {
+    this.presenceHandlers.add(handler);
+    return () => this.presenceHandlers.delete(handler);
+  }
+
+  /** Broadcast a presence change to every connected parent. */
+  publishPresence(event: PresenceEvent): number {
+    for (const handler of this.presenceHandlers) {
+      try {
+        handler(event);
+      } catch {
+        /* a broken subscriber must not stop the others */
+      }
+    }
+    return this.presenceHandlers.size;
+  }
+
+  /** Number of live presence subscribers (used in tests). */
+  presenceSubscriberCount(): number {
+    return this.presenceHandlers.size;
   }
 }
 

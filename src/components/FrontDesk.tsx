@@ -73,6 +73,7 @@ export default function FrontDesk({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [presenceState, setPresenceState] = useState<Presence | undefined>(presence);
   const [conversationId, setConversationId] = useState<string>();
   const sessionId = useRef<string | undefined>(undefined);
   const logRef = useRef<HTMLDivElement>(null);
@@ -90,6 +91,25 @@ export default function FrontDesk({
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  // Live desk availability: open a center-wide SSE stream on mount so the status
+  // pill updates the moment an operator opens/closes the desk (analysis/11 §4.2).
+  useEffect(() => {
+    const es = new EventSource("/api/presence/stream");
+    es.addEventListener("presence", (e) => {
+      const p = JSON.parse((e as MessageEvent).data) as {
+        availability: "online" | "away";
+        operatorName: string;
+        awayMessage: string;
+      };
+      setPresenceState({
+        availability: p.availability,
+        operatorName: p.operatorName,
+        awayMessage: p.awayMessage,
+      });
+    });
+    return () => es.close();
+  }, []);
 
   // Live staff relay: once we have a conversation, subscribe to its SSE stream.
   useEffect(() => {
@@ -243,7 +263,7 @@ export default function FrontDesk({
         </a>
       </header>
 
-      {presence && <PresenceBar presence={presence} />}
+      {presenceState && <PresenceBar presence={presenceState} />}
 
       <div
         ref={logRef}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { adminUnauthorized, isAdmin } from "@/lib/admin";
 import { getSettings, resolveAvailability, updateSettings } from "@/lib/repo/settings";
+import { getRelayBus } from "@/lib/relay/bus";
 import { AWAY_MESSAGE_MAX, OPERATOR_NAME_MAX } from "@/lib/types";
 import type { Availability, CautionLevel, Provider, Settings } from "@/lib/types";
 
@@ -70,5 +71,22 @@ export async function PUT(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, settings: updateSettings(getDb(), patch) });
+  const updated = updateSettings(getDb(), patch);
+
+  // Push the new presence to every connected parent so the status pill updates
+  // live (analysis/11 §4.2) — the same SSE model as staff replies.
+  if (
+    patch.availability !== undefined ||
+    patch.operator_name !== undefined ||
+    patch.away_message !== undefined
+  ) {
+    getRelayBus().publishPresence({
+      type: "presence",
+      availability: updated.availability,
+      operatorName: updated.operator_name,
+      awayMessage: updated.away_message,
+    });
+  }
+
+  return NextResponse.json({ ok: true, settings: updated });
 }
