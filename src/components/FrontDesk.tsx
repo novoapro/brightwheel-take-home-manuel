@@ -273,11 +273,16 @@ export default function FrontDesk({
         escalationId: string;
         text: string;
         answeredBy: string;
+        // "grounded" = the operator forwarded the AI's draft, so it reads as an AI
+        // answer (📎) with sources; "staff" (default) = a person answered (👤).
+        provenance?: "grounded" | "staff";
+        citations?: { id: string; title: string }[];
       };
+      const provenance = msg.provenance ?? "staff";
       setMessages((m) => {
         if (m.some((x) => x.key === msg.id)) return m; // de-dupe on reconnect
         return [
-          // the matching holding message is no longer "pending" — a person replied
+          // the matching holding message is no longer "pending" — the team replied
           ...m.map((x) =>
             x.escalationId === msg.escalationId ? { ...x, relayPending: false } : x,
           ),
@@ -285,8 +290,11 @@ export default function FrontDesk({
             key: msg.id,
             role: "frontdesk" as const,
             text: msg.text,
-            provenance: "staff" as const,
-            answeredBy: msg.answeredBy,
+            provenance,
+            // Only a forwarded AI answer names the team member; a grounded reply
+            // shows source chips instead.
+            answeredBy: provenance === "staff" ? msg.answeredBy : undefined,
+            citations: (msg.citations ?? []).map((c) => ({ ...c, source: null })),
           },
         ];
       });
@@ -975,7 +983,7 @@ function FrontDeskBubble({
               title="Open our family handbook"
               className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-1 text-xs text-brand-strong hover:bg-brand/20"
             >
-              📎 More details here ›
+              📎 {c.title} ›
             </a>
           ))}
         </div>
