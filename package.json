@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "eval": "tsx scripts/eval.ts",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "db:seed:demo": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

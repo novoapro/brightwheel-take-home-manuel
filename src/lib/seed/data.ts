@@ -1,7 +1,15 @@
 import type { Center, KnowledgeEntryInput } from "../types";
 
 /**
- * Seed data for Little Acorns Early Learning Center.
+ * Demo / test fixture: Little Acorns Early Learning Center.
+ *
+ * This is NOT the production seed — it's the fully-populated dataset the unit
+ * tests, the golden eval, and the optional `npm run db:seed:demo` run against so
+ * grounding/escalation behavior has real policies to work with. The app runtime
+ * never imports this file; production boots on the minimal placeholder center in
+ * ./bootstrap.ts, and real policies are imported as JSON through the admin
+ * Knowledge Base. Keeping the demo data here (rather than in the boot path) is
+ * what keeps production lean.
  *
  * Adapted (not copied) from the public City of Albuquerque 2019 Family Handbook
  * into a fictional independent SMB — see analysis/02-seed-source-and-policy-map.md.

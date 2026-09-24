@@ -10,12 +10,14 @@ export interface SeedResult {
 }
 
 /**
- * Seed the source of truth: the Little Acorns center, its policy set, and the
- * default settings row. Idempotent — re-running upserts by primary key rather
- * than duplicating, so `npm run db:seed` is safe to run repeatedly.
+ * Seed the full demo dataset — the Little Acorns center, its policy set, and the
+ * default settings row. This is a **test/eval fixture**, not the production
+ * seed: it's imported only by the unit tests, the golden eval, and the optional
+ * demo script (`npm run db:seed:demo`), never by the app runtime. Production
+ * boots on the minimal placeholder seed in ./bootstrap.ts instead, and real
+ * policies are imported as JSON through the admin Knowledge Base.
  *
- * Historical interactions / escalations (for the operator dashboard) are seeded
- * later, in M5 — this is the policy source of truth only (M1).
+ * Idempotent — re-running upserts by primary key rather than duplicating.
  */
 export function seedDatabase(db: Database): SeedResult {
   const run = db.transaction(() => {

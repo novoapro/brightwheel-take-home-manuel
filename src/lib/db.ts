@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { migrate, SCHEMA_VERSION } from "./schema";
 import { countEntries } from "./repo/knowledge";
 import { metricsNeedBackfill, recomputeMetrics } from "./repo/metrics_rollup";
+import { seedIfEmpty } from "./seed/bootstrap";
 
 /**
  * Single better-sqlite3 connection for the app.
@@ -31,6 +32,10 @@ export function getDb(): Database.Database {
   db.pragma("foreign_keys = ON");
 
   migrate(db);
+  // Fresh install: seed the minimum (a placeholder center + default settings) so
+  // every surface — including the Branding tab — has a row to read on first boot.
+  // Knowledge entries are imported separately, so none are seeded here.
+  seedIfEmpty(db);
   // One-time backfill for databases created before the metrics rollup existed:
   // build it from the raw audit rows still present (no-op once populated).
   if (metricsNeedBackfill(db)) recomputeMetrics(db);

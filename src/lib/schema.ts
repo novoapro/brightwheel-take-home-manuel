@@ -1,10 +1,10 @@
 import type { Database } from "better-sqlite3";
 
 /**
- * The full relational schema for Front Desk (M1).
+ * The full relational schema for Front Desk.
  *
  * Entities map 1:1 to analysis/01-data-and-knowledge-model.md §2:
- *   center, policies (KnowledgeEntry), conversations, messages,
+ *   center, knowledge_entries (KnowledgeEntry), conversations, messages,
  *   interaction_audit (InteractionAudit), escalations (Escalation), settings.
  *
  * JSON-shaped fields are TEXT holding JSON; (de)serialization lives at the
@@ -16,10 +16,13 @@ import type { Database } from "better-sqlite3";
  * (`retrieval`, `latency_human_response_ms`, `operator_disposition`) are likewise
  * reserved for planned analytics/triage work — kept intentionally, not dead.
  *
- * Migrations are idempotent (CREATE TABLE IF NOT EXISTS): safe to run on every
- * boot and in tests against a fresh :memory: database.
+ * This is the first version's consolidated baseline — a single `CREATE TABLE IF
+ * NOT EXISTS` pass, no incremental migration history. It is idempotent: safe to
+ * run on every boot and in tests against a fresh :memory: database. When the
+ * shape changes pre-1.0 we edit this DDL and recreate the (disposable) dev DB
+ * rather than carrying migrations.
  */
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 1;
 
 const DDL = `
 -- meta: schema version + health-check breadcrumbs
@@ -231,122 +234,6 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
 );
 `;
 
-function tableExists(db: Database, name: string): boolean {
-  return (
-    db
-      .prepare(
-        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`,
-      )
-      .get(name) !== undefined
-  );
-}
-
-function columnExists(db: Database, table: string, column: string): boolean {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as {
-    name: string;
-  }[];
-  return cols.some((c) => c.name === column);
-}
-
-/**
- * One-time migration for databases created before the Handbook→Knowledge Base
- * rename (schema ≤ 8): the `policies` table becomes `knowledge_entries` (shedding
- * the old intent CHECK so custom categories are allowed and gaining the
- * `unpublished` status), and `escalations.promoted_policy_id` is repointed at the
- * renamed table as `promoted_entry_id`. Best-effort and idempotent — a no-op on a
- * fresh DB (no legacy `policies` table) and safe to run on every boot.
- */
-function migrateLegacyPolicies(db: Database): void {
-  if (!tableExists(db, "policies")) return;
-
-  // FK pragma is a no-op inside a transaction, so toggle it around the tx.
-  db.pragma("foreign_keys = OFF");
-  try {
-    db.transaction(() => {
-      db.exec(`
-        INSERT OR IGNORE INTO knowledge_entries
-          (id, intent, title, body_md, structured, keywords,
-           effective_from, effective_to, source, status, origin, version,
-           updated_by, updated_at, embedding)
-        SELECT
-           id, intent, title, body_md, structured, keywords,
-           effective_from, effective_to, source, status, origin, version,
-           updated_by, updated_at, embedding
-        FROM policies;
-      `);
-
-      // Rebuild escalations only if it still carries the old FK column.
-      if (columnExists(db, "escalations", "promoted_policy_id")) {
-        db.exec(`
-          CREATE TABLE escalations_new (
-            id                 TEXT PRIMARY KEY,
-            interaction_id     TEXT REFERENCES interaction_audit(id),
-            question           TEXT NOT NULL,
-            detected_intent    TEXT,
-            reason             TEXT NOT NULL,
-            status             TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','answered','dismissed')),
-            operator_answer    TEXT,
-            answered_by        TEXT,
-            answered_at        TEXT,
-            promoted_entry_id  TEXT REFERENCES knowledge_entries(id),
-            delivery           TEXT NOT NULL DEFAULT 'live' CHECK (delivery IN ('live','email')),
-            contact_name       TEXT,
-            contact_email      TEXT,
-            delivered_at       TEXT,
-            question_embedding BLOB,
-            created_at         TEXT NOT NULL
-          );
-          INSERT INTO escalations_new
-            (id, interaction_id, question, detected_intent, reason, status,
-             operator_answer, answered_by, answered_at, promoted_entry_id,
-             delivery, contact_name, contact_email, delivered_at,
-             question_embedding, created_at)
-          SELECT
-             id, interaction_id, question, detected_intent, reason, status,
-             operator_answer, answered_by, answered_at, promoted_policy_id,
-             delivery, contact_name, contact_email, delivered_at,
-             question_embedding, created_at
-          FROM escalations;
-          DROP TABLE escalations;
-          ALTER TABLE escalations_new RENAME TO escalations;
-          CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations (status);
-        `);
-      }
-
-      db.exec(`DROP TABLE policies;`);
-    })();
-  } finally {
-    db.pragma("foreign_keys = ON");
-  }
-}
-
-/**
- * Add columns introduced after a table's first release. `CREATE TABLE IF NOT
- * EXISTS` never alters an existing table, so a DB created before schema v10 is
- * missing the audit/rating columns — add them idempotently here (the disposable-
- * DB stance still holds; this just spares a manual re-seed). SQLite allows CHECK
- * and a NOT NULL+DEFAULT on ADD COLUMN; NULL passes a CHECK, so nullable columns
- * added to existing rows are fine.
- */
-function migrateAddedColumns(db: Database): void {
-  const add = (table: string, column: string, def: string) => {
-    if (!columnExists(db, table, column)) {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
-    }
-  };
-  // settings — developer mode gate + audit retention (analysis/05 §2).
-  add("settings", "developer_mode", "developer_mode INTEGER NOT NULL DEFAULT 0");
-  add(
-    "settings",
-    "audit_mode",
-    "audit_mode TEXT NOT NULL DEFAULT 'off' CHECK (audit_mode IN ('off','flagged','all'))",
-  );
-  // parent_sessions — session-level rating (analysis/05 Tier 4).
-  add("parent_sessions", "rating", "rating TEXT CHECK (rating IN ('up','down'))");
-  add("parent_sessions", "review", "review TEXT");
-  add("parent_sessions", "rated_at", "rated_at TEXT");
-}
-
 /**
  * Apply the schema to a database connection. Idempotent — creates any missing
  * tables/indexes and records the schema version. Accepts any Database instance
@@ -354,8 +241,6 @@ function migrateAddedColumns(db: Database): void {
  */
 export function migrate(db: Database): void {
   db.exec(DDL);
-  migrateLegacyPolicies(db);
-  migrateAddedColumns(db);
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('app', 'ai-front-desk')
        ON CONFLICT(key) DO NOTHING`,
