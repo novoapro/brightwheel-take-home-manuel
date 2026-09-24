@@ -52,6 +52,7 @@ export default function KnowledgeBaseEditor({
   const [addingCategory, setAddingCategory] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | Entry["status"]>("all");
+  const [keywordFilter, setKeywordFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -365,12 +366,25 @@ export default function KnowledgeBaseEditor({
   // Each category's sensitivity tier — drives the list-header badge.
   const tierByName = new Map(categories.map((c) => [c.name, c.sensitivity]));
 
+  // Keyword search: split on whitespace and require EVERY term to appear somewhere
+  // in the entry's searchable text (title, body, keywords, category, id) — an AND
+  // match so "fever toddler" narrows rather than widens.
+  const terms = keywordFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchesKeywords = (e: Entry) => {
+    if (terms.length === 0) return true;
+    const hay =
+      `${e.title} ${e.body_md} ${e.keywords.join(" ")} ${e.intent} ${e.id}`.toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  };
+
   const filtered = entries.filter(
     (e) =>
       (categoryFilter === "all" || e.intent === categoryFilter) &&
-      (statusFilter === "all" || e.status === statusFilter),
+      (statusFilter === "all" || e.status === statusFilter) &&
+      matchesKeywords(e),
   );
-  const filtering = categoryFilter !== "all" || statusFilter !== "all";
+  const filtering =
+    categoryFilter !== "all" || statusFilter !== "all" || terms.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -423,7 +437,16 @@ export default function KnowledgeBaseEditor({
       {notice && <p className="text-sm text-brand-strong">{notice}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
+          <span className="font-medium text-muted">Keyword</span>
+          <input
+            value={keywordFilter}
+            onChange={(e) => setKeywordFilter(e.target.value)}
+            placeholder="Search title, body, keywords…"
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-brand"
+          />
+        </label>
         <FilterSelect label="Category" value={categoryFilter} onChange={setCategoryFilter}>
           <option value="all">All categories</option>
           {categoryOptions.map((i) => (
@@ -447,8 +470,9 @@ export default function KnowledgeBaseEditor({
             onClick={() => {
               setCategoryFilter("all");
               setStatusFilter("all");
+              setKeywordFilter("");
             }}
-            className="self-end rounded-lg px-2 py-1.5 text-xs text-muted hover:text-foreground"
+            className="rounded-lg px-2 py-1.5 text-xs text-muted hover:text-foreground"
           >
             Clear
           </button>
