@@ -104,6 +104,33 @@ function NavIcon({ name, className = "h-[18px] w-[18px] shrink-0" }: { name: Tab
   );
 }
 
+// Session key for the operator's passcode. sessionStorage (not localStorage) is
+// deliberate: it survives a page refresh but is cleared the moment the tab or
+// browser closes — so the operator stays signed in across reloads, yet is never
+// left logged in on a shared machine after they walk away. The passcode is a
+// mock demo gate (see lib/admin.ts), not a real credential.
+const AUTH_KEY = "fd_admin_auth";
+
+// Log-out glyph (Feather-style) — matches the nav icons' stroke treatment.
+function LogoutIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-[18px] w-[18px] shrink-0"
+      aria-hidden
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 export default function AdminPage() {
   const [passcode, setPasscode] = useState("");
   const [authCode, setAuthCode] = useState<string>();
@@ -123,6 +150,10 @@ export default function AdminPage() {
   // Start closed so mobile never flashes the overlay open before the mount
   // effect resolves the saved preference / breakpoint.
   const [collapsed, setCollapsed] = useState(true);
+  // Gate the first paint until we've checked sessionStorage for a restored
+  // session — otherwise a signed-in operator would flash the passcode form on
+  // every refresh before the effect below re-authenticates them.
+  const [hydrated, setHydrated] = useState(false);
 
   // Remember the operator's nav preference; default to collapsed on small screens.
   useEffect(() => {
@@ -133,6 +164,20 @@ export default function AdminPage() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  // Restore a signed-in operator across refreshes (see AUTH_KEY). Runs once on
+  // mount so SSR / first paint stays unauthenticated and hydration matches.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- mount-time sync with client-only sessionStorage */
+    try {
+      const saved = sessionStorage.getItem(AUTH_KEY);
+      if (saved) setAuthCode(saved);
+    } catch {
+      /* ignore */
+    }
+    setHydrated(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   function toggleNav() {
@@ -223,7 +268,31 @@ export default function AdminPage() {
       return;
     }
     setAuthCode(passcode);
+    try {
+      sessionStorage.setItem(AUTH_KEY, passcode);
+    } catch {
+      /* ignore — auth still works for this tab via component state */
+    }
   }
+
+  // End the session: drop the restored passcode and fall back to the gate.
+  // Closing the tab/browser has the same effect for free (sessionStorage), so
+  // this Log out button is the only explicit exit an operator needs.
+  function logout() {
+    try {
+      sessionStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* ignore */
+    }
+    setAuthCode(undefined);
+    setPasscode("");
+    setError(undefined);
+    setTab("dashboard");
+  }
+
+  // Nothing to show until we've checked for a restored session — avoids a
+  // one-frame flash of the passcode form on refresh for a signed-in operator.
+  if (!hydrated) return null;
 
   if (!authCode) {
     return (
@@ -362,6 +431,21 @@ export default function AdminPage() {
             </button>
           ))}
         </nav>
+
+        {/* Session action, pinned to the sidebar foot. Icon-only when the rail
+            is collapsed, matching the nav rows above. */}
+        <div className="border-t border-border px-2 py-2">
+          <button
+            onClick={logout}
+            title="Log out"
+            className={`flex w-full items-center gap-3 rounded-lg py-2 text-sm text-muted transition hover:bg-you ${
+              collapsed ? "justify-center px-0" : "px-3"
+            }`}
+          >
+            <LogoutIcon />
+            {!collapsed && <span className="truncate">Log out</span>}
+          </button>
+        </div>
 
         {!collapsed && <PoweredByBrightwheel />}
       </aside>
