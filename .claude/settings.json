@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -f /private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke.db*; echo cleaned)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(rm -f /private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke2.db*)",
+      "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke2.db npx tsx -e ' *)",
+      "Bash(rm -f /private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke3.db*)",
+      "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke3.db npx tsx -e ' *)",
+      "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke4.db npx tsx -e ' *)",
+      "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke5.db npx tsx -e ' *)",
+      "Bash(git check-ignore *)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad"
+    ]
+  }
+}

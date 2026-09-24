@@ -24,7 +24,7 @@ The two stateful needs — **durable SQLite writes** and a **long-lived SSE stre
 ## Prerequisites
 
 - **Node.js 20+** (uses native `better-sqlite3`; developed on Node 20–25)
-- An **Anthropic API key** for live answers — or set one in the admin UI once running (see below). OpenAI / Google keys are optional.
+- An llm key for live answers. Anthropics, OpenAI or Google.
 
 ## Getting started
 
