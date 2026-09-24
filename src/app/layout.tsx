@@ -45,9 +45,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      // The accent tokens live on <body> and browser extensions (Grammarly,
+      // Dark Reader, …) commonly inject attributes onto <html>/<body> before
+      // React hydrates. suppressHydrationWarning is shallow — it only silences a
+      // mismatch on these two elements' own attributes, not anything the app
+      // renders inside them, so real hydration bugs still surface.
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body
+        suppressHydrationWarning
         className="min-h-full flex flex-col"
         style={
           {
