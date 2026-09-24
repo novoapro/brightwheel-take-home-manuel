@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import { DEFAULT_CACHE_TTL, type Provider } from "../types";
 import { getStoredCredential, resolveApiKey } from "../repo/credentials";
 import { getSettings } from "../repo/settings";
-import { PROVIDER_REGISTRY } from "./registry";
+import { PROVIDER_REGISTRY, resolveEnvAnswerer } from "./registry";
 import { ClaudeFrontDeskModel } from "./claude";
 import { GeminiFrontDeskModel } from "./gemini";
 import { OpenAIFrontDeskModel } from "./openai";
@@ -21,7 +21,9 @@ export function getModel(
 ): FrontDeskModel {
   const reg = PROVIDER_REGISTRY[provider];
   let apiKey: string | undefined;
-  let answererModel = reg.defaultAnswerer;
+  // Bootstrap default from env (FRONTDESK_MODEL), else the registry default; a
+  // UI-stored model choice below still wins.
+  let answererModel = resolveEnvAnswerer(provider) ?? reg.defaultAnswerer;
   let judgeModel = reg.defaultJudge;
   // The prompt-cache TTL is an operator setting (Settings ▸ AI Assistant); it's
   // passed to every adapter for a uniform seam. Claude honors it; OpenAI/Gemini

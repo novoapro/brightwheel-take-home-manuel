@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import { DEFAULT_CACHE_TTL, type AuditMode, type Settings } from "../types";
+import { resolveEnvProvider } from "../model/registry";
 
 /**
  * Repository for the single-row Settings (analysis/01 §2.6).
@@ -12,7 +13,9 @@ import { DEFAULT_CACHE_TTL, type AuditMode, type Settings } from "../types";
 
 const DEFAULTS: Settings = {
   caution_level: "balanced",
-  active_provider: "anthropic",
+  // First-boot default provider: env FRONTDESK_PROVIDER, else Anthropic. Only
+  // seeds the row on first read; a later /admin choice is persisted and wins.
+  active_provider: resolveEnvProvider() ?? "anthropic",
   availability: "online",
   operator_name: "",
   away_message: "",

@@ -14,8 +14,13 @@ export function isAdmin(request: Request): boolean {
  * headers (a demo-gate concession — the passcode is not a real secret).
  */
 export function isAdminPasscode(provided: string | null | undefined): boolean {
-  const expected = process.env.ADMIN_PASSCODE ?? "change-me";
-  return !!provided && provided === expected;
+  // Trim both sides. The passcode is a mock gate, not a real secret (§ above), and
+  // env values set through a host's dashboard or a .env file very often carry a
+  // trailing newline/space — an exact match would then fail and read as an
+  // "invalid passcode" even when the value is right. Whitespace is never part of
+  // a real passcode, so trimming is safe and removes a common footgun.
+  const expected = (process.env.ADMIN_PASSCODE ?? "change-me").trim();
+  return !!provided && provided.trim() === expected;
 }
 
 /** Standard 401 body for admin routes. */

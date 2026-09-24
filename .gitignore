@@ -32,3 +32,8 @@ npm-debug.log*
 *.sqlite
 *.sqlite3
 *.db
+
+# Turn-in doc (HTML source + generated PDF): embeds the demo admin passcode —
+# keep both local, don't track them in the repo.
+/docs/Front-Desk-Documentation.html
+/docs/Front-Desk-Documentation.pdf

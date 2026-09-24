@@ -55,3 +55,33 @@ export const PROVIDER_REGISTRY: Record<Provider, ProviderRegistryEntry> = {
 export function isValidAnswerer(provider: Provider, id: string): boolean {
   return PROVIDER_REGISTRY[provider].answerers.some((m) => m.id === id);
 }
+
+/** The neutral provider ids, in display order. */
+export const PROVIDERS: Provider[] = ["anthropic", "openai", "google"];
+
+/**
+ * Bootstrap default provider from env (`FRONTDESK_PROVIDER`), validated against
+ * the known providers. Undefined when unset/invalid — callers fall back to the
+ * built-in default. Like the env API keys, this is only a first-boot default:
+ * once an operator picks a provider in /admin it's stored in the DB and wins.
+ */
+export function resolveEnvProvider(
+  raw = process.env.FRONTDESK_PROVIDER,
+): Provider | undefined {
+  const v = raw?.trim().toLowerCase();
+  return PROVIDERS.includes(v as Provider) ? (v as Provider) : undefined;
+}
+
+/**
+ * Bootstrap default answerer model from env (`FRONTDESK_MODEL`), for the active
+ * provider only — validated against that provider's registry, so a model meant
+ * for another provider is ignored rather than sent. Undefined when unset/invalid;
+ * a UI-stored model choice still overrides it.
+ */
+export function resolveEnvAnswerer(
+  provider: Provider,
+  raw = process.env.FRONTDESK_MODEL,
+): string | undefined {
+  const v = raw?.trim();
+  return v && isValidAnswerer(provider, v) ? v : undefined;
+}
