@@ -14,6 +14,7 @@ import {
   formatJudgeSources,
   formatJudgeUser,
 } from "./shared";
+import { type CacheTtl, DEFAULT_CACHE_TTL } from "../types";
 
 /**
  * Claude implementation of the FrontDeskModel seam (analysis/04 §6).
@@ -32,6 +33,12 @@ export interface ClaudeConfig {
   apiKey?: string;
   answererModel?: string;
   judgeModel?: string;
+  /**
+   * Prompt-cache TTL for the system prefix ("5m" | "1h"). Operator-configured
+   * (Settings ▸ AI Assistant → the `cache_ttl` setting); the factory passes the
+   * stored value. Defaults to 1h. See {@link CacheTtl} for the rationale.
+   */
+  cacheTtl?: CacheTtl;
   client?: Anthropic;
 }
 
@@ -39,6 +46,7 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
   readonly provider = "anthropic" as const;
   readonly answererModel: string;
   private readonly judgeModel: string;
+  private readonly cacheTtl: CacheTtl;
   private client: Anthropic;
 
   constructor(config: ClaudeConfig = {}) {
@@ -48,6 +56,9 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
       config.client ?? (config.apiKey ? new Anthropic({ apiKey: config.apiKey }) : new Anthropic());
     this.answererModel = config.answererModel ?? ANSWERER_MODEL;
     this.judgeModel = config.judgeModel ?? JUDGE_MODEL;
+    // The factory supplies the operator-configured TTL; default to 1h otherwise
+    // (zero-arg construction in tests / the integration harness).
+    this.cacheTtl = config.cacheTtl ?? DEFAULT_CACHE_TTL;
   }
 
   async groundedAnswer(input: GroundedAnswerInput): Promise<GroundedResult> {
@@ -55,12 +66,19 @@ export class ClaudeFrontDeskModel implements FrontDeskModel {
       model: this.answererModel,
       max_tokens: 2000,
       thinking: { type: "adaptive" },
-      // Cache the stable prefix; pay input only for the (short) question.
+      // Cache the stable prefix; pay input only for the (short) question. The
+      // prefix (persona + center facts + all published policies) is identical
+      // across every parent and changes only when the operator edits a policy,
+      // so we hold it with an operator-configured TTL (default 1h, vs. the API
+      // default of 5m) — front-desk traffic is bursty (clustered at drop-off /
+      // pick-up, quiet between), and 1h keeps the cache warm across those gaps.
+      // A policy edit changes the prefix bytes and invalidates the cache on its
+      // own, so freshness is never traded away (analysis/04 §4.1, analysis/08).
       system: [
         {
           type: "text",
           text: input.system,
-          cache_control: { type: "ephemeral" },
+          cache_control: { type: "ephemeral", ttl: this.cacheTtl },
         },
       ],
       messages: input.messages,

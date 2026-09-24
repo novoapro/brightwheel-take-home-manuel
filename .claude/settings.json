@@ -9,7 +9,16 @@
       "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke3.db npx tsx -e ' *)",
       "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke4.db npx tsx -e ' *)",
       "Bash(DATABASE_PATH=/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad/smoke5.db npx tsx -e ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(node -e \"const D=require\\('better-sqlite3'\\); const db=new D\\('./data/app.db'\\); const r=db.prepare\\(\\\\\"SELECT sql FROM sqlite_master WHERE name='escalations'\\\\\"\\).get\\(\\); console.log\\(r? r.sql : 'NO escalations table'\\); console.log\\('--- columns ---'\\); console.log\\(db.prepare\\('PRAGMA table_info\\(escalations\\)'\\).all\\(\\).map\\(c=>c.name\\).join\\(', '\\)\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(git branch *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(echo \"=== TSC EXIT: $? ===\")",
+      "Bash(npx vitest *)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"=== LINT EXIT: $? ===\")"
     ],
     "additionalDirectories": [
       "/private/tmp/claude-501/-Users-manuel-Desktop-development-brightwheel/5234775e-b298-453e-aa56-da464ef437c8/scratchpad"

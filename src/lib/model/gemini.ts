@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { SENSITIVE_CATEGORIES, type SensitiveCategory } from "../types";
+import { SENSITIVE_CATEGORIES, type CacheTtl, type SensitiveCategory } from "../types";
 import type {
   FrontDeskModel,
   GroundedAnswerInput,
@@ -71,6 +71,13 @@ export interface GeminiConfig {
   apiKey?: string;
   answererModel?: string;
   judgeModel?: string;
+  /**
+   * Accepted for a uniform provider seam (the factory passes the operator's
+   * `cache_ttl` to every adapter). Gemini caches implicitly with no per-request
+   * TTL on this call path, so this is reserved here — ready to wire to explicit
+   * context caching (`caches.create({ ttl })`) if that's added later.
+   */
+  cacheTtl?: CacheTtl;
   ai?: GoogleGenAI;
 }
 

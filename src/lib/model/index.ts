@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
-import type { Provider } from "../types";
+import { DEFAULT_CACHE_TTL, type Provider } from "../types";
 import { getStoredCredential, resolveApiKey } from "../repo/credentials";
+import { getSettings } from "../repo/settings";
 import { PROVIDER_REGISTRY } from "./registry";
 import { ClaudeFrontDeskModel } from "./claude";
 import { GeminiFrontDeskModel } from "./gemini";
@@ -22,15 +23,20 @@ export function getModel(
   let apiKey: string | undefined;
   let answererModel = reg.defaultAnswerer;
   let judgeModel = reg.defaultJudge;
+  // The prompt-cache TTL is an operator setting (Settings ▸ AI Assistant); it's
+  // passed to every adapter for a uniform seam. Claude honors it; OpenAI/Gemini
+  // cache automatically with no TTL knob, so it's reserved there (analysis/04 §4.1).
+  let cacheTtl = DEFAULT_CACHE_TTL;
 
   if (db) {
     const cred = getStoredCredential(db, provider);
     if (cred?.answerer_model) answererModel = cred.answerer_model;
     if (cred?.judge_model) judgeModel = cred.judge_model;
     apiKey = resolveApiKey(db, provider) ?? undefined; // null → env fallback
+    cacheTtl = getSettings(db).cache_ttl;
   }
 
-  const config = { apiKey, answererModel, judgeModel };
+  const config = { apiKey, answererModel, judgeModel, cacheTtl };
   switch (provider) {
     case "openai":
       return new OpenAIFrontDeskModel(config);

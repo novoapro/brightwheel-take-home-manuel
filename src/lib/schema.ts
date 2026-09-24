@@ -246,7 +246,11 @@ CREATE TABLE IF NOT EXISTS settings (
   -- judge_enabled: run the LLM groundedness judge (inline gate + async metrics).
   -- On by default; off makes one model call per turn instead of two (cost), with
   -- sensitive answers safe-degrading to escalation (analysis/04 §3e).
-  judge_enabled   INTEGER NOT NULL DEFAULT 1
+  judge_enabled   INTEGER NOT NULL DEFAULT 1,
+  -- cache_ttl: prompt-cache TTL for the grounded system prefix (analysis/04 §4.1).
+  -- '5m' | '1h'; 1h by default (front-desk traffic is bursty). Passed to every
+  -- provider adapter; honored by the Claude answerer's cache_control.
+  cache_ttl       TEXT NOT NULL DEFAULT '1h' CHECK (cache_ttl IN ('5m','1h'))
 );
 
 -- provider_credentials: per-provider API key (encrypted) + model choice (analysis/11 §3.6).
@@ -270,6 +274,7 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
  */
 export function migrate(db: Database): void {
   db.exec(DDL);
+  ensureColumns(db);
   seedDefaultCategories(db);
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('app', 'ai-front-desk')
@@ -279,6 +284,28 @@ export function migrate(db: Database): void {
     `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(String(SCHEMA_VERSION));
+}
+
+/**
+ * Additive column back-fills for databases created before a column existed.
+ *
+ * The DDL above is `CREATE TABLE IF NOT EXISTS`, so it never alters a table that
+ * already exists — a pre-existing deploy would miss any column added later. This
+ * is the one place we carry a forward-only `ADD COLUMN`, applied idempotently
+ * (skipped when the column is already present). Fresh DBs get the column from the
+ * DDL and skip this entirely. Kept deliberately small; a real migration ledger is
+ * the post-1.0 plan (see the header note + analysis/08).
+ */
+function ensureColumns(db: Database): void {
+  const has = (table: string, column: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (c) => c.name === column,
+    );
+  if (!has("settings", "cache_ttl")) {
+    db.exec(
+      `ALTER TABLE settings ADD COLUMN cache_ttl TEXT NOT NULL DEFAULT '1h' CHECK (cache_ttl IN ('5m','1h'))`,
+    );
+  }
 }
 
 /**

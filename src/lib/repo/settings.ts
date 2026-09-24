@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import type { AuditMode, Settings } from "../types";
+import { DEFAULT_CACHE_TTL, type AuditMode, type Settings } from "../types";
 
 /**
  * Repository for the single-row Settings (analysis/01 §2.6).
@@ -20,6 +20,7 @@ const DEFAULTS: Settings = {
   developer_mode: false,
   audit_mode: "off",
   judge_enabled: true,
+  cache_ttl: DEFAULT_CACHE_TTL,
 };
 
 /** SQLite stores booleans as 0/1; the DB row shape before coercion. */
@@ -46,7 +47,7 @@ export function effectiveAuditMode(s: Settings): AuditMode {
 export function getSettings(db: Database): Settings {
   const row = db
     .prepare(
-      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled
+      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled, cache_ttl
          FROM settings WHERE id = 1`,
     )
     .get() as SettingsRow | undefined;
@@ -55,8 +56,8 @@ export function getSettings(db: Database): Settings {
   }
 
   db.prepare(
-    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled)
-     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at, @developer_mode, @audit_mode, @judge_enabled)`,
+    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled, cache_ttl)
+     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at, @developer_mode, @audit_mode, @judge_enabled, @cache_ttl)`,
   ).run(toRow(DEFAULTS));
   return { ...DEFAULTS };
 }
@@ -92,7 +93,8 @@ export function updateSettings(
             offline_at = @offline_at,
             developer_mode = @developer_mode,
             audit_mode = @audit_mode,
-            judge_enabled = @judge_enabled
+            judge_enabled = @judge_enabled,
+            cache_ttl = @cache_ttl
       WHERE id = 1`,
   ).run(toRow(next));
   return next;

@@ -148,6 +148,20 @@ export type Provider = "anthropic" | "openai" | "google";
 export type Availability = "online" | "away";
 
 /**
+ * Prompt-cache TTL for the grounded system prefix (analysis/04 §4.1, analysis/08).
+ * The two values Anthropic's ephemeral cache supports — this is the whole set.
+ * Operator-configurable (Settings ▸ AI Assistant); defaults to 1h because
+ * front-desk traffic is bursty (clustered at drop-off / pick-up, quiet between),
+ * so a 1-hour window keeps the cached handbook warm across gaps. A policy edit
+ * changes the prefix bytes and invalidates the cache on its own, so a longer TTL
+ * never trades away freshness. Honored by the Claude answerer; OpenAI and Gemini
+ * cache automatically with no developer TTL knob, so the value is reserved there.
+ */
+export type CacheTtl = "5m" | "1h";
+export const CACHE_TTLS: readonly CacheTtl[] = ["5m", "1h"];
+export const DEFAULT_CACHE_TTL: CacheTtl = "1h";
+
+/**
  * How much per-turn troubleshooting detail the operator retains (analysis/05 §2).
  *   off     — audit disabled: collect nothing.
  *   flagged — capture always; at close keep only sessions that did NOT get a 👍.
@@ -194,6 +208,12 @@ export interface Settings {
    * unverified; non-sensitive answers still pass on the deterministic checks.
    */
   judge_enabled: boolean;
+  /**
+   * Prompt-cache TTL for the grounded system prefix (see {@link CacheTtl}).
+   * Defaults to "1h"; the operator can drop it to "5m" from the AI Assistant
+   * settings to shorten the cache window.
+   */
+  cache_ttl: CacheTtl;
 }
 
 /** How a staff answer reaches the parent (analysis/11 §4.3). */

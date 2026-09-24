@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import { describe, it, expect } from "vitest";
 import { createMemoryDb } from "./db";
 import { migrate, SCHEMA_VERSION } from "./schema";
@@ -109,5 +110,43 @@ describe("schema / migrate", () => {
     expect(() => db.prepare(`INSERT INTO settings (id) VALUES (2)`).run()).toThrow(
       /CHECK/i,
     );
+  });
+
+  it("back-fills cache_ttl on a pre-existing settings table (the deploy path)", () => {
+    // Simulate a database created before the cache_ttl column existed: a legacy
+    // settings table with a populated row. migrate() must ADD the column
+    // idempotently and default the existing row to '1h' — not recreate the table.
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        caution_level TEXT NOT NULL DEFAULT 'balanced',
+        active_provider TEXT NOT NULL DEFAULT 'anthropic',
+        availability TEXT NOT NULL DEFAULT 'online',
+        operator_name TEXT NOT NULL DEFAULT '',
+        away_message TEXT NOT NULL DEFAULT '',
+        offline_at TEXT,
+        developer_mode INTEGER NOT NULL DEFAULT 0,
+        audit_mode TEXT NOT NULL DEFAULT 'off',
+        judge_enabled INTEGER NOT NULL DEFAULT 1
+      );
+      INSERT INTO settings (id) VALUES (1);
+    `);
+    const cols = () =>
+      (db.prepare(`PRAGMA table_info(settings)`).all() as { name: string }[]).map(
+        (c) => c.name,
+      );
+    expect(cols()).not.toContain("cache_ttl");
+
+    migrate(db);
+    expect(cols()).toContain("cache_ttl");
+    expect(
+      (db.prepare(`SELECT cache_ttl FROM settings WHERE id = 1`).get() as {
+        cache_ttl: string;
+      }).cache_ttl,
+    ).toBe("1h");
+
+    // Idempotent: a second migrate() must not throw (column already present).
+    expect(() => migrate(db)).not.toThrow();
   });
 });

@@ -25,6 +25,7 @@ describe("settings repo", () => {
       developer_mode: false,
       audit_mode: "off",
       judge_enabled: true,
+      cache_ttl: "1h",
     });
     expect(
       (db.prepare(`SELECT COUNT(*) AS n FROM settings`).get() as { n: number })
@@ -63,8 +64,23 @@ describe("settings repo", () => {
       developer_mode: false,
       audit_mode: "off",
       judge_enabled: true,
+      cache_ttl: "1h",
     });
     expect(getSettings(db)).toEqual(s);
+  });
+
+  it("defaults cache_ttl to 1h and round-trips a change to 5m", () => {
+    expect(getSettings(db).cache_ttl).toBe("1h");
+    updateSettings(db, { cache_ttl: "5m" });
+    expect(getSettings(db).cache_ttl).toBe("5m");
+    expect(getSettings(db).caution_level).toBe("balanced"); // untouched
+  });
+
+  it("rejects an invalid cache_ttl via CHECK", () => {
+    expect(() =>
+      // @ts-expect-error — invalid on purpose
+      updateSettings(db, { cache_ttl: "30m" }),
+    ).toThrow();
   });
 
   it("rejects an invalid caution level via CHECK", () => {

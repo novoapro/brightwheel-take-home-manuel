@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
+import type { CacheTtl } from "../types";
 import type {
   FrontDeskModel,
   GroundedAnswerInput,
@@ -31,6 +32,13 @@ export interface OpenAIConfig {
   apiKey?: string;
   answererModel?: string;
   judgeModel?: string;
+  /**
+   * Accepted for a uniform provider seam (the factory passes the operator's
+   * `cache_ttl` to every adapter). OpenAI prompt caching is automatic with no
+   * developer-controlled TTL, so this is reserved here — kept so the seam stays
+   * symmetric and the value is ready if explicit caching is added.
+   */
+  cacheTtl?: CacheTtl;
   client?: OpenAI;
 }
 

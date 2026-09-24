@@ -4,8 +4,8 @@ import { adminUnauthorized, isAdmin } from "@/lib/admin";
 import { effectiveAuditMode, getSettings, resolveAvailability, updateSettings } from "@/lib/repo/settings";
 import { purgeDebugEnvelopes } from "@/lib/repo/debug";
 import { getRelayBus } from "@/lib/relay/bus";
-import { AWAY_MESSAGE_MAX, OPERATOR_NAME_MAX } from "@/lib/types";
-import type { AuditMode, Availability, CautionLevel, Provider, Settings } from "@/lib/types";
+import { AWAY_MESSAGE_MAX, CACHE_TTLS, OPERATOR_NAME_MAX } from "@/lib/types";
+import type { AuditMode, Availability, CacheTtl, CautionLevel, Provider, Settings } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +51,9 @@ export async function PUT(request: Request) {
   if (typeof body.judge_enabled === "boolean") {
     patch.judge_enabled = body.judge_enabled;
   }
+  if (CACHE_TTLS.includes(body.cache_ttl as CacheTtl)) {
+    patch.cache_ttl = body.cache_ttl as CacheTtl;
+  }
   // offline_at: null = never; an ISO string = auto-flip to Away at that time.
   if (body.offline_at === null) {
     patch.offline_at = null;
@@ -63,7 +66,7 @@ export async function PUT(request: Request) {
       {
         ok: false,
         error:
-          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message / developer_mode / audit_mode / judge_enabled).",
+          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message / developer_mode / audit_mode / judge_enabled / cache_ttl).",
       },
       { status: 400 },
     );

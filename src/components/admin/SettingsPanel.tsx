@@ -6,6 +6,7 @@ import { inputCls } from "./ui";
 
 type CautionLevel = "cautious" | "balanced" | "lean";
 type AuditMode = "off" | "flagged" | "all";
+type CacheTtl = "5m" | "1h";
 type Settings = {
   caution_level: CautionLevel;
   availability: "online" | "away";
@@ -14,6 +15,7 @@ type Settings = {
   developer_mode: boolean;
   audit_mode: AuditMode;
   judge_enabled: boolean;
+  cache_ttl: CacheTtl;
 };
 
 const CAUTIONS: { value: CautionLevel; label: string; hint: string }[] = [
@@ -26,6 +28,11 @@ const AUDIT_MODES: { value: AuditMode; label: string; hint: string }[] = [
   { value: "off", label: "Off", hint: "collect nothing" },
   { value: "flagged", label: "Flagged only (recommended)", hint: "keep detail only for poorly-rated sessions" },
   { value: "all", label: "All sessions", hint: "keep detail for every session" },
+];
+
+const CACHE_TTLS: { value: CacheTtl; label: string; hint: string }[] = [
+  { value: "1h", label: "1 hour (recommended)", hint: "stays warm through quiet spells" },
+  { value: "5m", label: "5 minutes", hint: "shorter window; refreshes more often" },
 ];
 
 /** The owner's safety dial (analysis/03 §4.4). Always-escalate categories relay regardless of this dial. */
@@ -95,13 +102,6 @@ export default function SettingsPanel({
         {saved && <p className="mt-2 text-xs text-brand-strong">Saved ✓</p>}
       </section>
 
-      <div className="rounded-lg border border-border bg-you p-3 text-xs text-muted">
-        🔒 Safety, suspected abuse, injuries, custody, and legal categories ship set
-        to <b>always escalate</b> — every question goes to a person. You can retune
-        any category&apos;s sensitivity under the Knowledge Base &rsaquo; Manage
-        categories.
-      </div>
-
       <section className="rounded-xl border border-border bg-surface p-4 shadow-card md:p-5">
         <h2 className="mb-1 text-sm font-semibold">Availability</h2>
         <p className="mb-3 text-xs text-muted">
@@ -137,6 +137,8 @@ export default function SettingsPanel({
         passcode={passcode}
         judgeEnabled={settings.judge_enabled}
         onJudgeChange={(v) => patch({ judge_enabled: v })}
+        cacheTtl={settings.cache_ttl}
+        onCacheTtlChange={(v) => patch({ cache_ttl: v })}
       />
 
       {/* Developer tools — visually set apart, at the bottom (analysis/05 §5). */}
@@ -237,10 +239,14 @@ function ProviderConfig({
   passcode,
   judgeEnabled,
   onJudgeChange,
+  cacheTtl,
+  onCacheTtlChange,
 }: {
   passcode: string;
   judgeEnabled: boolean;
   onJudgeChange: (value: boolean) => void;
+  cacheTtl: CacheTtl;
+  onCacheTtlChange: (value: CacheTtl) => void;
 }) {
   const [data, setData] = useState<ProviderData>();
   const [selected, setSelected] = useState<Provider>("anthropic");
@@ -420,6 +426,35 @@ function ProviderConfig({
             we never show a sensitive answer we couldn&apos;t verify.
           </p>
         )}
+      </div>
+
+      <div className="mt-4 border-t border-border pt-4">
+        <h3 className="mb-1 text-sm font-semibold">Handbook cache</h3>
+        <p className="mb-3 text-xs text-muted">
+          Your whole published handbook is sent to the AI as one reusable prompt
+          and cached, so repeat questions are faster and cheaper. This sets how
+          long the cache stays warm between questions. Editing a policy refreshes
+          it immediately either way — a longer window never shows stale answers.
+        </p>
+        <div className="flex flex-col gap-2">
+          {CACHE_TTLS.map((c) => (
+            <label
+              key={c.value}
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm ${
+                cacheTtl === c.value ? "border-brand bg-brand/5" : "border-border"
+              }`}
+            >
+              <input
+                type="radio"
+                name="cache-ttl"
+                checked={cacheTtl === c.value}
+                onChange={() => onCacheTtlChange(c.value)}
+              />
+              <span className="font-medium">{c.label}</span>
+              <span className="text-xs text-muted">— {c.hint}</span>
+            </label>
+          ))}
+        </div>
       </div>
     </section>
   );
