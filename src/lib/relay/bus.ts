@@ -20,6 +20,15 @@ export interface StaffMessageEvent {
     text: string;
     answeredBy: string;
     createdAt: string;
+    /**
+     * How the parent should see this relayed reply: "staff" = a person answered
+     * (👤 From our team); "grounded" = the operator forwarded the AI's draft
+     * unchanged, so it reads as a normal AI answer (📎) with its sources. Defaults
+     * to "staff" when omitted (older events / mid-relay messages).
+     */
+    provenance?: "grounded" | "staff";
+    /** Cited policies for a forwarded AI answer, for the parent's source chips. */
+    citations?: { id: string; title: string }[];
   };
 }
 

@@ -200,6 +200,64 @@ describe("answerSession — the live relay loop (single question)", () => {
   });
 });
 
+describe("answerSession — answer-assist (analysis/03 §4.2)", () => {
+  it("keeps the AI's draft + citations on the escalation for the operator", async () => {
+    const turn = await relayTurn(new FakeModel(caseSpecific()));
+    const esc = getEscalation(db, turn.message.escalationId!)!;
+    expect(esc.ai_draft_answer).toContain("check with our team");
+    expect(esc.ai_draft_citations).toEqual(["health.illness_exclusion"]);
+  });
+
+  it("forwards the AI draft as a grounded answer carrying its sources", async () => {
+    const turn = await relayTurn(new FakeModel(caseSpecific()));
+    const escId = turn.message.escalationId!;
+    const draft = getEscalation(db, escId)!;
+
+    const received: StaffMessageEvent[] = [];
+    const off = getRelayBus().subscribe(turn.conversationId, (e) => {
+      if (e.type === "staff_message") received.push(e);
+    });
+
+    const res = answerSession(db, {
+      escalationId: escId,
+      answer: draft.ai_draft_answer!,
+      answeredBy: "Maria",
+      source: "ai_suggested",
+      citations: draft.ai_draft_citations,
+    });
+    off();
+
+    expect(res.posted).toBe(true);
+    // Persisted as a grounded (AI) message with its citations — not a staff reply.
+    const msg = listMessages(db, turn.conversationId).at(-1)!;
+    expect(msg.provenance).toBe("grounded");
+    expect(msg.citations).toEqual(["health.illness_exclusion"]);
+    // The parent's live event carries the grounded provenance + resolved chips.
+    expect(received[0].message.provenance).toBe("grounded");
+    expect(received[0].message.citations?.map((c) => c.id)).toEqual([
+      "health.illness_exclusion",
+    ]);
+    // Recorded as an AI-forwarded answer for attribution + ROI.
+    expect(getEscalation(db, escId)!.answer_source).toBe("ai_suggested");
+  });
+
+  it("defaults to a staff answer (👤) when the operator writes their own", async () => {
+    const turn = await relayTurn(new FakeModel(caseSpecific()));
+    const escId = turn.message.escalationId!;
+
+    answerSession(db, {
+      escalationId: escId,
+      answer: "He needs one more fever-free day — bring him Thursday!",
+      answeredBy: "Maria",
+    });
+
+    const msg = listMessages(db, turn.conversationId).at(-1)!;
+    expect(msg.provenance).toBe("staff");
+    expect(msg.citations).toEqual([]);
+    expect(getEscalation(db, escId)!.answer_source).toBe("staff");
+  });
+});
+
 describe("answerSession — one reply resolves the whole family", () => {
   /** Two waiting questions in one shared session. */
   async function twoQuestionSession() {
@@ -287,6 +345,52 @@ describe("answerSession — one reply resolves the whole family", () => {
     expect(res.collectedKnowledge).toBe(false);
     expect(listPublishedEntries(db).length).toBe(before);
     // still fully resolved
+    expect(getEscalation(db, a)!.status).toBe("answered");
+    expect(getEscalation(db, b)!.status).toBe("answered");
+  });
+
+  it("per-question (resolveSession:false): answering one leaves the other waiting", async () => {
+    const { a, b } = await twoQuestionSession();
+
+    const res = answerSession(db, {
+      escalationId: a,
+      answer: "Here's the answer to just this one.",
+      answeredBy: "Maria",
+      resolveSession: false,
+    });
+
+    expect(res.resolvedCount).toBe(1);
+    expect(getEscalation(db, a)!.status).toBe("answered");
+    expect(getEscalation(db, b)!.status).toBe("waiting"); // the other stays open
+  });
+
+  it("a per-question reply carries its attached handbook citations", async () => {
+    const { a } = await twoQuestionSession();
+
+    answerSession(db, {
+      escalationId: a,
+      answer: "Per our handbook, here's the detail.",
+      answeredBy: "Maria",
+      citations: ["health.illness_exclusion"],
+      resolveSession: false,
+    });
+
+    const msg = listMessages(db, "cs").at(-1)!;
+    expect(msg.provenance).toBe("staff");
+    expect(msg.citations).toEqual(["health.illness_exclusion"]);
+  });
+
+  it("resolveSession:true still closes every waiting question at once", async () => {
+    const { a, b } = await twoQuestionSession();
+
+    const res = answerSession(db, {
+      escalationId: a,
+      answer: "One reply covers the whole session.",
+      answeredBy: "Maria",
+      resolveSession: true,
+    });
+
+    expect(res.resolvedCount).toBe(2);
     expect(getEscalation(db, a)!.status).toBe("answered");
     expect(getEscalation(db, b)!.status).toBe("answered");
   });
@@ -416,7 +520,9 @@ describe("buildRelayThread — the operator's context view", () => {
 
     expect(thread.status).toBe("waiting");
     expect(thread.isCaseSpecific).toBe(true);
-    expect(thread.aiReferenced).toContain("When to Keep Your Child Home");
+    expect(thread.aiReferenced.map((r) => r.title)).toContain(
+      "When to Keep Your Child Home",
+    );
 
     // the parent's question and the AI hand-off are both in the transcript
     const parent = thread.messages.find((m) => m.role === "parent");
@@ -694,7 +800,9 @@ describe("buildRelayQueue", () => {
     const health = queue.flatMap((q) => q.pending).find((p) => p.reason === "sensitive:case_specific")!;
     expect(health.isCaseSpecific).toBe(true);
     expect(health.captureDefault).toBe(false);
-    expect(health.aiReferenced).toContain("When to Keep Your Child Home");
+    expect(health.aiReferenced.map((r) => r.title)).toContain(
+      "When to Keep Your Child Home",
+    );
 
     const gap = queue.flatMap((q) => q.pending).find((p) => p.reason === "out_of_scope")!;
     expect(gap.isCaseSpecific).toBe(false);

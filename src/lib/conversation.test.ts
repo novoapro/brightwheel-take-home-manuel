@@ -20,8 +20,10 @@ class FakeModel implements FrontDeskModel {
   readonly provider = "anthropic" as const;
   readonly answererModel = "fake-answerer";
   lastHistory: Msg[] = [];
+  calls = 0;
   constructor(private result: GroundedResult) {}
   async groundedAnswer(input: GroundedAnswerInput): Promise<GroundedResult> {
+    this.calls++;
     this.lastHistory = input.messages;
     return this.result;
   }
@@ -141,6 +143,73 @@ describe("handleTurn — multi-turn", () => {
     expect(model2.lastHistory.length).toBe(3); // 2 prior + the new question
     expect(model2.lastHistory.at(-1)?.content).toBe("And on weekends?");
     expect(model2.lastHistory[0].role).toBe("user");
+  });
+});
+
+describe("handleTurn — continuation after escalation (analysis/03 §3.4)", () => {
+  it("keeps a bare acknowledgment in-thread: no model call, no duplicate escalation", async () => {
+    const first = await handleTurn(db, {
+      question: "My son had a fever — can he come in?",
+      model: new FakeModel(relayedCase()),
+    });
+    expect(first.decision).toBe("relayed");
+    expect(listWaitingEscalations(db)).toHaveLength(1);
+
+    const ackModel = new FakeModel(answered());
+    const ack = await handleTurn(db, {
+      question: "Okay, thank you!",
+      conversationId: first.conversationId,
+      model: ackModel,
+    });
+
+    expect(ack.decision).toBe("answered");
+    expect(ack.reason).toBe("continuation");
+    expect(ack.message.escalationId).toBeNull();
+    expect(ack.message.provenance).toBeNull();
+    // The model was never consulted, and no second escalation was raised.
+    expect(ackModel.calls).toBe(0);
+    expect(listWaitingEscalations(db)).toHaveLength(1);
+
+    // The parent's "okay" and a warm reassurance are the last two messages.
+    const msgs = listMessages(db, first.conversationId);
+    expect(msgs.at(-2)?.role).toBe("parent");
+    expect(msgs.at(-2)?.text).toBe("Okay, thank you!");
+    expect(msgs.at(-1)?.role).toBe("frontdesk");
+    expect(msgs.at(-1)?.provenance).toBeNull();
+
+    const audit = getAudit(db, ack.interactionId)!;
+    expect(audit.decision).toBe("answered");
+    expect(audit.decision_reason).toBe("continuation");
+  });
+
+  it("still runs the pipeline for a genuinely different question mid-relay", async () => {
+    const first = await handleTurn(db, {
+      question: "My son had a fever — can he come in?",
+      model: new FakeModel(relayedCase()),
+    });
+    expect(listWaitingEscalations(db)).toHaveLength(1);
+
+    const qModel = new FakeModel(answered());
+    const second = await handleTurn(db, {
+      question: "Also, what are your weekend hours?",
+      conversationId: first.conversationId,
+      model: qModel,
+    });
+
+    expect(qModel.calls).toBe(1); // a real question is answered, not short-circuited
+    expect(second.decision).toBe("answered");
+    expect(second.reason).toBe("grounded");
+  });
+
+  it("does not short-circuit acknowledgments when no relay is active", async () => {
+    const model = new FakeModel(answered());
+    const r = await handleTurn(db, {
+      question: "thanks!",
+      model,
+    });
+    // No active relay → normal pipeline handles it (the model runs as usual).
+    expect(model.calls).toBe(1);
+    expect(r.reason).not.toBe("continuation");
   });
 });
 

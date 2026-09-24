@@ -313,6 +313,25 @@ describe("decide — relay copy", () => {
     expect(d.parent_message).not.toContain("Definitely yes");
     expect(d.parent_message.toLowerCase()).toContain("team");
   });
+
+  it("preserves the model's suppressed draft for the operator (answer-assist)", async () => {
+    const { ctx } = ctxWith();
+    const draft = "In general, kids need to be fever-free 24h before returning.";
+    const d = await decide(
+      mk({
+        citations: ["health.illness_exclusion"],
+        is_case_specific: true,
+        sensitive_category: "health",
+        parent_message: draft,
+      }),
+      ctx,
+    );
+    expect(d.decision).toBe("relayed");
+    // The parent sees the safe holding message; the operator gets the real draft.
+    expect(d.parent_message).not.toBe(draft);
+    expect(d.suggested_answer).toBe(draft);
+    expect(d.citations).toContain("health.illness_exclusion");
+  });
 });
 
 describe("decide — greetings & small talk (social)", () => {

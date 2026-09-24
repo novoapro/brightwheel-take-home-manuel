@@ -191,6 +191,15 @@ CREATE TABLE IF NOT EXISTS escalations (
   operator_answer    TEXT,
   answered_by        TEXT,
   answered_at        TEXT,
+  -- how the reply was produced: the operator forwarded the AI's draft unchanged
+  -- ('ai_suggested' → shown to the parent as a grounded AI answer) or wrote/edited
+  -- it themselves ('staff'). Null until answered. Drives attribution + ROI metrics.
+  answer_source      TEXT CHECK (answer_source IN ('ai_suggested','staff')),
+  -- the model's drafted answer, suppressed by the guardrail but kept so the
+  -- operator can accept/edit it in the relay (analysis/03 §4.2), plus the policy
+  -- ids that draft cited (JSON array) — for clickable sources + a grounded send.
+  ai_draft_answer    TEXT,
+  ai_draft_citations TEXT NOT NULL DEFAULT '[]',
   promoted_entry_id TEXT REFERENCES knowledge_entries(id),   -- the capture edge
   -- delivery mode + captured contact for off-hours async follow-up (analysis/11 §4.3)
   delivery           TEXT NOT NULL DEFAULT 'live' CHECK (delivery IN ('live','email')),

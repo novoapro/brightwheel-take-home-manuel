@@ -12,6 +12,12 @@ import { captureDefaultFor } from "./capture";
  * the single source of that logic.
  */
 
+/** A cited policy, resolved for a clickable "AI already referenced" chip. */
+export interface ReferencedPolicy {
+  id: string;
+  title: string;
+}
+
 /** One unanswered question within a session — a still-waiting escalation. */
 export interface PendingQuestion {
   escalationId: string;
@@ -19,19 +25,30 @@ export interface PendingQuestion {
   intent: DetectedIntent | null;
   reason: string;
   isCaseSpecific: boolean;
-  /** Titles of policies the AI grounded in before relaying — "AI already shared". */
-  aiReferenced: string[];
+  /** Policies the AI grounded in before relaying — the operator's "AI already
+   *  shared" cue, now with ids so each chip deep-links to the handbook. */
+  aiReferenced: ReferencedPolicy[];
+  /** The model's suppressed draft answer, for the operator to accept/edit (or null). */
+  aiDraft: string | null;
   captureDefault: boolean;
   waitingSince: string;
 }
 
-/** Titles of the policies the AI cited on the turn that triggered an escalation. */
-export function aiReferencedFor(db: Database, interactionId: string | null): string[] {
-  const audit = interactionId ? getAudit(db, interactionId) : null;
-  return (audit?.cited_sources ?? []).flatMap((id) => {
+/** Resolve cited policy ids to {id, title} chips (dropping any that no longer exist). */
+export function referencedPolicies(db: Database, ids: string[]): ReferencedPolicy[] {
+  return ids.flatMap((id) => {
     const p = getEntry(db, id);
-    return p ? [p.title] : [];
+    return p ? [{ id: p.id, title: p.title }] : [];
   });
+}
+
+/** Policies the AI cited on the turn that triggered an escalation (from the audit). */
+export function aiReferencedFor(
+  db: Database,
+  interactionId: string | null,
+): ReferencedPolicy[] {
+  const audit = interactionId ? getAudit(db, interactionId) : null;
+  return referencedPolicies(db, audit?.cited_sources ?? []);
 }
 
 /** Every still-waiting escalation from the same family as `esc` (queue grouping). */
@@ -57,7 +74,12 @@ export function toPendingQuestion(db: Database, esc: Escalation): PendingQuestio
     intent: esc.detected_intent,
     reason: esc.reason,
     isCaseSpecific: esc.reason.startsWith("sensitive:"),
-    aiReferenced: aiReferencedFor(db, esc.interaction_id),
+    // Prefer the draft's own cited ids stored on the escalation; fall back to the
+    // audit for older rows that predate the column.
+    aiReferenced: esc.ai_draft_citations.length
+      ? referencedPolicies(db, esc.ai_draft_citations)
+      : aiReferencedFor(db, esc.interaction_id),
+    aiDraft: esc.ai_draft_answer,
     captureDefault: captureDefaultFor(esc.reason),
     waitingSince: esc.created_at,
   };

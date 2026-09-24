@@ -9,16 +9,27 @@ import {
   createConversation,
   getConversation,
 } from "./repo/conversations";
-import { createEscalation } from "./repo/escalations";
+import { createEscalation, getActiveLiveRelay } from "./repo/escalations";
 import { appendMessage, listMessages } from "./repo/messages";
 import { getEntry } from "./repo/knowledge";
+import { isAcknowledgment } from "./relay/acknowledgment";
 import { publishQueueCount } from "./relay/queue";
 import { effectiveAuditMode, resolveAvailability } from "./repo/settings";
-import type { EscalationDelivery } from "./types";
+import type { DetectedIntent, EscalationDelivery } from "./types";
 
 /** Holding text when we relay while Away — pairs with the parent contact form. */
 const AWAY_RELAY_TEXT =
   "I want to get this exactly right, so I'll pass it to our team. We're away right now.";
+
+/**
+ * Warm reassurance for a bare acknowledgment ("okay", "thanks") sent while a
+ * staff member is already relaying into the thread (analysis/03 §3.4). We keep the
+ * turn in-thread — no model call, no new escalation — so the front desk stays one
+ * continuous voice and the parent isn't told "checking with our team" a second
+ * time or answered over the person who's already on it.
+ */
+const CONTINUATION_TEXT =
+  "Thanks for your patience! We're still checking with our team, and I'll have your answer for you right here in just a moment.";
 
 /**
  * The parent-turn orchestrator (analysis/03 §3.4, analysis/04 §1): runs the
@@ -79,6 +90,23 @@ export async function handleTurn(
     : null;
   const conversationId = existing?.id ?? randomUUID();
   const sessionId = existing?.session_id ?? input.sessionId ?? randomUUID();
+
+  // Continuation (analysis/03 §3.4): a bare "okay"/"thanks" on a thread a human is
+  // already relaying into stays in-thread — no model call, no re-escalation. Only
+  // when there's an active live relay AND the message adds no new question; a real
+  // follow-up question falls through and is answered (or escalated) as usual.
+  if (existing) {
+    const activeRelay = getActiveLiveRelay(db, conversationId);
+    if (activeRelay && isAcknowledgment(input.question)) {
+      return continuationTurn(db, {
+        conversationId,
+        sessionId,
+        question: input.question,
+        intent: activeRelay.detected_intent,
+        provider: settings.active_provider,
+      });
+    }
+  }
 
   // Build multi-turn history from prior messages (before this turn) so a thread
   // can start general and turn case-specific — the wrapper re-decides each turn.
@@ -176,6 +204,11 @@ export async function handleTurn(
         detected_intent: decision.intent,
         reason: decision.reason,
         delivery: delivery ?? "live",
+        // Keep the model's suppressed draft + its cited policies so the operator
+        // can accept/edit it in the relay (analysis/03 §4.2). Away/email relays
+        // keep it too — it's still a useful starting point for the reply.
+        ai_draft_answer: decision.suggested_answer ?? null,
+        ai_draft_citations: decision.citations,
       });
     }
 
@@ -211,6 +244,90 @@ export async function handleTurn(
           : [],
       escalationId,
       delivery,
+    },
+  };
+}
+
+/**
+ * A continuation turn (analysis/03 §3.4): the parent acknowledged ("okay",
+ * "thanks") while a human is already relaying. We record the turn — parent
+ * message, a warm reassurance, an audit row, a metrics fold — but do NOT call the
+ * model and do NOT create a new escalation. It logs as a *contained* answered turn
+ * (reason "continuation"), so the front desk stays one voice and the operator's
+ * open relay simply shows the acknowledgment on its next poll.
+ */
+function continuationTurn(
+  db: Database,
+  args: {
+    conversationId: string;
+    sessionId: string;
+    question: string;
+    intent: DetectedIntent | null;
+    provider: string;
+  },
+): TurnResult {
+  const { conversationId, sessionId, question, provider } = args;
+  const intent = args.intent ?? "social";
+  const interactionId = randomUUID();
+
+  const commit = db.transaction(() => {
+    appendMessage(db, {
+      id: randomUUID(),
+      conversation_id: conversationId,
+      role: "parent",
+      text: question,
+    });
+
+    insertAudit(db, {
+      id: interactionId,
+      session_id: sessionId,
+      conversation_id: conversationId,
+      parent_question: question,
+      detected_intent: intent,
+      decision: "answered",
+      decision_reason: "continuation",
+      confidence: null,
+      provider,
+      model: null,
+      response_text: CONTINUATION_TEXT,
+      cited_sources: [],
+      checks: null,
+      latency_first_response_ms: 0,
+    });
+
+    foldTurn(db, {
+      timestamp: new Date().toISOString(),
+      intent,
+      provider,
+      decision: "answered",
+      decision_reason: "continuation",
+      cited_count: 0,
+    });
+
+    appendMessage(db, {
+      id: randomUUID(),
+      conversation_id: conversationId,
+      role: "frontdesk",
+      provenance: null, // front-desk voice, not a new AI answer or a staff reply
+      text: CONTINUATION_TEXT,
+      citations: [],
+      escalation_id: null,
+    });
+  });
+  commit();
+
+  return {
+    conversationId,
+    sessionId,
+    interactionId,
+    decision: "answered",
+    reason: "continuation",
+    message: {
+      text: CONTINUATION_TEXT,
+      provenance: null,
+      citations: [],
+      escalationId: null,
+      delivery: null,
     },
   };
 }

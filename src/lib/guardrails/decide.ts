@@ -32,7 +32,13 @@ export type DecisionReason =
   /** The answer's category is configured always-escalate (operator-owned tier). */
   | "sensitive:always_escalate"
   /** Judge disabled (cost): a sensitive answer we couldn't verify → escalate (3e). */
-  | "sensitive:unverified";
+  | "sensitive:unverified"
+  /**
+   * A bare acknowledgment ("okay", "thanks") on a thread a human is already
+   * relaying into — kept in-thread, not re-run through the model, not
+   * re-escalated. Set outside the wrapper by handleTurn (see conversation.ts).
+   */
+  | "continuation";
 
 export type CheckState = "pass" | "fail" | "skipped";
 
@@ -41,6 +47,13 @@ export interface FinalDecision {
   reason: DecisionReason;
   /** What the parent sees — the grounded answer, or a warm relay holding message. */
   parent_message: string;
+  /**
+   * On relay: the model's suppressed draft answer (`model.parent_message` before
+   * the templated holding message replaced it). Kept so the operator can accept,
+   * edit, or discard it in the live relay (analysis/03 §4.2) — the parent never
+   * sees this until a staff member forwards it. Undefined on an answered turn.
+   */
+  suggested_answer?: string;
   citations: string[];
   intent: DetectedIntent;
   sensitive_category: SensitiveCategory | null;
@@ -290,6 +303,8 @@ class Guardrails {
       decision: "relayed",
       reason,
       parent_message: this.ctx.relayMessage(model.sensitive_category),
+      // The parent sees the safe holding message; the operator sees this draft.
+      suggested_answer: model.parent_message,
       citations: model.citations,
       intent: model.intent,
       sensitive_category: model.sensitive_category,

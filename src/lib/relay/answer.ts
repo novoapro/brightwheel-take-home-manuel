@@ -13,7 +13,7 @@ import { upsertEntry } from "../repo/knowledge";
 import { buildCapturedPolicy } from "./capture";
 import { getRelayBus } from "./bus";
 import { publishQueueCount } from "./queue";
-import { sessionWaiting } from "./pending";
+import { referencedPolicies, sessionWaiting } from "./pending";
 
 /**
  * Send a mid-relay message to the parent WITHOUT resolving the escalation — the
@@ -97,10 +97,30 @@ export function sendRelayMessage(db: Database, input: SendMessageInput): SentMes
  * handles it next time.
  */
 export interface AnswerSessionInput {
-  /** Any escalation in the target session (typically the one the operator opened). */
+  /** The waiting escalation being answered (the question the operator is on). */
   escalationId: string;
   answer: string;
   answeredBy: string;
+  /**
+   * Resolve the WHOLE session (every waiting question, closed by this one reply)
+   * vs. just this one question (default). Per-question answering lets an operator
+   * reply to each escalation individually — e.g. accept the AI's answer for one
+   * question while another still needs a written reply.
+   */
+  resolveSession?: boolean;
+  /**
+   * How the reply was produced (analysis/03 §4.2): "ai_suggested" = the operator
+   * forwarded the AI's draft unchanged, so the parent sees a grounded AI answer
+   * (📎) carrying `citations`; "staff" (default) = the operator wrote/edited it,
+   * shown as 👤 From our team.
+   */
+  source?: "ai_suggested" | "staff";
+  /**
+   * Policy ids to attach as source chips on the reply — the AI draft's citations
+   * when forwarding, or the operator's kept/attached handbook policies when they
+   * edited or wrote their own. Works for either source.
+   */
+  citations?: string[];
   /** The pending question to promote to knowledge, or null/undefined for none. */
   captureEscalationId?: string | null;
   captureIntent?: Intent;
@@ -141,6 +161,14 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
   const waiting = sessionWaiting(db, esc, sessionId);
   if (waiting.length === 0) throw new Error("This session has no waiting questions.");
 
+  // Which questions this reply closes: the whole session, or just this one. A
+  // per-question answer leaves the other waiting escalations open (analysis/03 §4.2).
+  const resolveSession = input.resolveSession !== false;
+  const targets = resolveSession
+    ? waiting
+    : waiting.filter((w) => w.id === esc.id);
+  if (targets.length === 0) throw new Error("This question has already been handled.");
+
   // Parent gone from a live relay → nothing to post; email is delivered by the
   // route, never streamed. Otherwise the reply streams into the open thread.
   const parentGone = esc.delivery === "live" && hasParentLeft(db, sessionId);
@@ -161,6 +189,13 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
   const answeredBy = input.answeredBy.trim() || "Front Desk Team";
   const messageId = randomUUID();
   const routeEscalationId = captureEsc?.id ?? esc.id;
+
+  // A forwarded AI draft reads to the parent as a grounded AI answer; a
+  // written/edited reply reads as a staff answer. Either way, any handbook
+  // policies the operator kept/attached ride along as source chips.
+  const source: "ai_suggested" | "staff" = input.source === "ai_suggested" ? "ai_suggested" : "staff";
+  const replyCitations = input.citations ?? [];
+  const replyProvenance = source === "ai_suggested" ? "grounded" : "staff";
 
   const commit = db.transaction(() => {
     let promotedEntryId: string | null = null;
@@ -183,12 +218,13 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
       promotedEntryId = policy.id;
     }
 
-    // One reply closes every waiting question in the session.
-    for (const w of waiting) {
+    // Close the targeted question(s) — this one, or the whole session.
+    for (const w of targets) {
       answerEscalation(db, {
         id: w.id,
         answer,
         answeredBy,
+        source,
         promotedEntryId: w.id === captureEsc?.id ? promotedEntryId : null,
       });
     }
@@ -199,8 +235,9 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
         id: messageId,
         conversation_id: ctx.conversation_id,
         role: "frontdesk",
-        provenance: "staff",
+        provenance: replyProvenance,
         text: answer,
+        citations: replyCitations,
         escalation_id: routeEscalationId,
       });
       createdAt = message.created_at;
@@ -217,14 +254,23 @@ export function answerSession(db: Database, input: AnswerSessionInput): AnswerSe
     getRelayBus().publish({
       type: "staff_message",
       conversationId: ctx.conversation_id,
-      message: { id: messageId, escalationId: routeEscalationId, text: answer, answeredBy, createdAt },
+      message: {
+        id: messageId,
+        escalationId: routeEscalationId,
+        text: answer,
+        answeredBy,
+        createdAt,
+        provenance: replyProvenance,
+        // Resolve ids → {id,title} so the parent can render the source chips.
+        citations: referencedPolicies(db, replyCitations),
+      },
     });
   }
 
   return {
     conversationId: ctx.conversation_id,
     sessionId,
-    resolvedCount: waiting.length,
+    resolvedCount: targets.length,
     promotedEntryId,
     delivery: esc.delivery,
     contactName: esc.contact_name,

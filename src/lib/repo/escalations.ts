@@ -13,6 +13,12 @@ export interface Escalation {
   operator_answer: string | null;
   answered_by: string | null;
   answered_at: string | null;
+  /** How the reply was produced (analysis/03 §4.2): forwarded AI draft vs. written. */
+  answer_source: "ai_suggested" | "staff" | null;
+  /** The model's suppressed draft answer, kept for the operator to accept/edit. */
+  ai_draft_answer: string | null;
+  /** Policy ids the draft cited — for clickable sources + a grounded send. */
+  ai_draft_citations: string[];
   promoted_entry_id: string | null;
   /** live = SSE relay into an open thread; email = async follow-up (analysis/11 §4.3). */
   delivery: EscalationDelivery;
@@ -30,6 +36,24 @@ export interface EscalationInput {
   reason: DecisionReason;
   /** Defaults to "live"; "email" when the desk is Away (analysis/11 §4.3). */
   delivery?: EscalationDelivery;
+  /** The model's suppressed draft answer, for the operator to accept/edit. */
+  ai_draft_answer?: string | null;
+  /** Policy ids the draft cited (for clickable sources + a grounded send). */
+  ai_draft_citations?: string[];
+}
+
+/** The stored row — ai_draft_citations is TEXT JSON, parsed at this boundary. */
+type EscalationRow = Omit<Escalation, "ai_draft_citations"> & {
+  ai_draft_citations: string | null;
+};
+
+function rowToEscalation(row: EscalationRow): Escalation {
+  return {
+    ...row,
+    ai_draft_citations: row.ai_draft_citations
+      ? (JSON.parse(row.ai_draft_citations) as string[])
+      : [],
+  };
 }
 
 /** Create a waiting escalation for the live-relay queue (M4 answers it). */
@@ -40,10 +64,18 @@ export function createEscalation(
   const created_at = new Date().toISOString();
   db.prepare(
     `INSERT INTO escalations
-       (id, interaction_id, question, detected_intent, reason, status, delivery, created_at)
+       (id, interaction_id, question, detected_intent, reason, status,
+        ai_draft_answer, ai_draft_citations, delivery, created_at)
      VALUES
-       (@id, @interaction_id, @question, @detected_intent, @reason, 'waiting', @delivery, @created_at)`,
-  ).run({ ...input, delivery: input.delivery ?? "live", created_at });
+       (@id, @interaction_id, @question, @detected_intent, @reason, 'waiting',
+        @ai_draft_answer, @ai_draft_citations, @delivery, @created_at)`,
+  ).run({
+    ...input,
+    ai_draft_answer: input.ai_draft_answer ?? null,
+    ai_draft_citations: JSON.stringify(input.ai_draft_citations ?? []),
+    delivery: input.delivery ?? "live",
+    created_at,
+  });
   return getEscalation(db, input.id)!;
 }
 
@@ -70,8 +102,32 @@ export function markEscalationDelivered(db: Database, id: string): void {
 export function getEscalation(db: Database, id: string): Escalation | null {
   const row = db
     .prepare(`SELECT * FROM escalations WHERE id = ?`)
-    .get(id) as Escalation | undefined;
-  return row ?? null;
+    .get(id) as EscalationRow | undefined;
+  return row ? rowToEscalation(row) : null;
+}
+
+/**
+ * The escalation actively being relayed into a conversation, if any: the oldest
+ * still-waiting, live-delivery escalation on that conversation's thread. Used by
+ * handleTurn to keep a follow-up ("okay", "thanks") in the existing relay instead
+ * of re-running it through the model and re-escalating (analysis/03 §3.4).
+ */
+export function getActiveLiveRelay(
+  db: Database,
+  conversationId: string,
+): Escalation | null {
+  const row = db
+    .prepare(
+      `SELECT e.* FROM escalations e
+         JOIN interaction_audit a ON a.id = e.interaction_id
+        WHERE a.conversation_id = ?
+          AND e.status = 'waiting'
+          AND e.delivery = 'live'
+        ORDER BY e.created_at, e.rowid
+        LIMIT 1`,
+    )
+    .get(conversationId) as EscalationRow | undefined;
+  return row ? rowToEscalation(row) : null;
 }
 
 /** Waiting escalations, oldest first — the live-relay queue (analysis/03 §4.2). */
@@ -83,20 +139,24 @@ export function listWaitingEscalations(db: Database): Escalation[] {
   // interaction/session was removed (its interaction_id nulled). It has no live
   // thread or parent to relay to, so it can't be a live-relay item — dropping it
   // keeps the queue (and the dashboard's waiting count) honest.
-  return db
-    .prepare(
-      `SELECT * FROM escalations
-        WHERE status = 'waiting' AND interaction_id IS NOT NULL
-        ORDER BY created_at, rowid`,
-    )
-    .all() as Escalation[];
+  return (
+    db
+      .prepare(
+        `SELECT * FROM escalations
+          WHERE status = 'waiting' AND interaction_id IS NOT NULL
+          ORDER BY created_at, rowid`,
+      )
+      .all() as EscalationRow[]
+  ).map(rowToEscalation);
 }
 
 /** Every escalation (any status) — used for gap analysis on the dashboard. */
 export function listAllEscalations(db: Database): Escalation[] {
-  return db
-    .prepare(`SELECT * FROM escalations ORDER BY created_at, id`)
-    .all() as Escalation[];
+  return (
+    db
+      .prepare(`SELECT * FROM escalations ORDER BY created_at, id`)
+      .all() as EscalationRow[]
+  ).map(rowToEscalation);
 }
 
 /**
@@ -121,6 +181,8 @@ export function answerEscalation(
     answer: string;
     answeredBy: string;
     promotedEntryId?: string | null;
+    /** How the reply was produced — defaults to "staff" (analysis/03 §4.2). */
+    source?: "ai_suggested" | "staff";
   },
 ): void {
   db.prepare(
@@ -129,6 +191,7 @@ export function answerEscalation(
             operator_answer = @answer,
             answered_by = @answeredBy,
             answered_at = @answered_at,
+            answer_source = @source,
             promoted_entry_id = @promotedEntryId
       WHERE id = @id`,
   ).run({
@@ -136,6 +199,7 @@ export function answerEscalation(
     answer: input.answer,
     answeredBy: input.answeredBy,
     answered_at: new Date().toISOString(),
+    source: input.source ?? "staff",
     promotedEntryId: input.promotedEntryId ?? null,
   });
 }

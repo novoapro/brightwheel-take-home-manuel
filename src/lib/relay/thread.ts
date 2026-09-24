@@ -10,6 +10,7 @@ import {
   sessionWaiting,
   toPendingQuestion,
   type PendingQuestion,
+  type ReferencedPolicy,
 } from "./pending";
 
 /**
@@ -51,8 +52,8 @@ export interface RelayThread {
   isCaseSpecific: boolean;
   waitingSince: string;
   delivery: EscalationDelivery;
-  /** Titles of policies the AI grounded in before relaying. */
-  aiReferenced: string[];
+  /** Policies the AI grounded in before relaying (with ids for deep links). */
+  aiReferenced: ReferencedPolicy[];
   parentName: string | null;
   parentEmail: string | null;
   /** False once the parent has left — replies are collected as knowledge, not sent. */

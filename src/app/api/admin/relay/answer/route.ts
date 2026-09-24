@@ -51,10 +51,24 @@ export async function POST(request: Request) {
     const bodyAnsweredBy = typeof body.answeredBy === "string" ? body.answeredBy.trim() : "";
     const answeredBy = bodyAnsweredBy || getSettings(getDb()).operator_name;
 
+    // How the reply was produced: the operator forwarded the AI's draft unchanged
+    // ('ai_suggested' → the parent sees a grounded AI answer with its sources) or
+    // wrote/edited it ('staff', the default). Attached handbook policies ride along
+    // as source chips in either case.
+    const source = body.source === "ai_suggested" ? "ai_suggested" : "staff";
+    const citations = Array.isArray(body.citations)
+      ? (body.citations as unknown[]).filter((c): c is string => typeof c === "string")
+      : undefined;
+    // Default to per-question (only true resolves the whole session).
+    const resolveSession = body.resolveSession === true;
+
     const result = answerSession(getDb(), {
       escalationId,
       answer,
       answeredBy,
+      source,
+      citations,
+      resolveSession,
       captureEscalationId,
       captureIntent,
       captureTitle: typeof body.captureTitle === "string" ? body.captureTitle : undefined,
