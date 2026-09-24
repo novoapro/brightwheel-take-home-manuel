@@ -250,7 +250,7 @@ Two controls from Stage 4, made human.
 │  Compare results → Dashboard │
 └─────────────────────────────┘
 ```
-*Craft:* the caution dial gives the **owner ownership of the safety-vs-deflection tradeoff** (Stage 4 τ presets), with a visible floor-lock. The bring-your-own-key provider config makes the model-agnostic design tangible — a center runs the front desk on its own account, and results stay comparable in the dashboard.
+*Craft:* the caution dial gives the **owner ownership of the safety-vs-deflection tradeoff** (Stage 4 τ presets), complemented by per-category sensitivity tiers in the Knowledge Base ([01 §2.2b](01-data-and-knowledge-model.md)) — an operator can mark a whole category always-escalate. The bring-your-own-key provider config makes the model-agnostic design tangible — a center runs the front desk on its own account, and results stay comparable in the dashboard.
 
 ---
 

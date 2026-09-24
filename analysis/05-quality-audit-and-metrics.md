@@ -33,7 +33,9 @@ InteractionAudit {
   decision: "answered" | "escalated"
   decision_reason            // canonical set ([09 §4.4](09-plan-review-and-consistency.md)):
                              //   "grounded" | "fact_mismatch" | "low_groundedness" |
-                             //   "below_threshold" | "sensitive:<category>" | "out_of_scope" | …
+                             //   "below_threshold" | "sensitive:always_escalate" |
+                             //   "sensitive:case_specific" | "sensitive:unverified" |
+                             //   "out_of_scope" | …
   confidence                 // model/self-reported grounding confidence
   provider                   // "anthropic" | "openai" | "google"  — which impl handled it (enables A/B)
   model                      // e.g. "claude-sonnet-5" | "gpt-5" | "gemini-flash-latest"
@@ -94,7 +96,7 @@ Treat answer-vs-escalate as a **binary classifier** against the ground-truth "sh
 | **System answered** | ✅ correct deflection | ❌ **Under-escalation (false negative)** |
 | **System escalated** | ⚠️ Over-escalation (false positive) | ✅ correct handoff |
 
-- **Under-escalation (FN)** = answered something it should have handed off. **This is the dangerous, trust-destroying error** — worst on sensitive intents (health/safety/billing). A confident wrong answer to "my child has a fever, can they come in?" is the failure mode we most refuse.
+- **Under-escalation (FN)** = answered something it should have handed off. **This is the dangerous, trust-destroying error** — worst on sensitive categories (health/safety/billing). A confident wrong answer to "my child has a fever, can they come in?" is the failure mode we most refuse.
 - **Over-escalation (FP)** = handed off something it could have answered. Costs a deflection and some admin time, but is **safe**.
 
 Metrics:

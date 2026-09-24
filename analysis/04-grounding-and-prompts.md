@@ -70,19 +70,22 @@ The single rule from [02 §3](02-seed-source-and-policy-map.md), made operationa
 | **Sensitive category + case-specific** | model: `sensitive_category` + `is_case_specific` | Answer the *policy*; escalate the *child/account/incident*. |
 | **Hard-sensitive category (always)** | code + model: safety/abuse/custody/incident/legal | Some topics are never automatable regardless of confidence. |
 
-**Asymmetric thresholds (the defensible stance, per [05 §3](05-quality-audit-and-metrics.md)):** τ is **not global**. For **sensitive questions** we raise the bar to *answer* (escalate more readily) — tuning for **high escalation recall**. We'd rather over-escalate a fever question than ever answer one wrong. "Sensitive" comes from two independent signals — a sensitive *intent* (`SENSITIVE_INTENTS`) and a model-detected *category* (`sensitive_category`) — canonical lists in [09 §4](09-plan-review-and-consistency.md):
+**Asymmetric thresholds (the defensible stance, per [05 §3](05-quality-audit-and-metrics.md)):** τ is **not global**. For **sensitive questions** we raise the bar to *answer* (escalate more readily) — tuning for **high escalation recall**. We'd rather over-escalate a fever question than ever answer one wrong. Sensitivity is driven by the **operator-owned per-category tier** (canonical in [09 §4.3](09-plan-review-and-consistency.md)), plus the model's cross-cutting `sensitive_category` signal for case-specific questions:
 
 ```
-SENSITIVE_INTENTS = { health }        // of the 5 intents, only health is intrinsically sensitive
-                                      //   (tuition's billing-dispute case flows via sensitive_category)
-τ_answer = 0.75 normally,  0.9 when sensitive   (DEFAULTS, operator-tunable)
-HARD_SENSITIVE = { safety, abuse, incident, custody, legal }
-                 → always escalate, ignore confidence   (floor-locked, never operator-lowered)
-// every other sensitive_category (billing, enrollment, behavior, individual, grievance, health)
-// escalates via the case-specific rule, so GENERAL policy stays answerable.
+category tier (categories table; read live via sensitiveCategorySet() /
+               alwaysEscalateCategorySet(), passed into decide() — no hard-coded list):
+  normal          → normal bar
+  sensitive       → higher bar (seed default: { health })
+  always_escalate → never answer, ignore confidence
+                    (seed default: { safety, abuse, incident, custody, legal })
+τ_answer = 0.75 normally, 0.9 when sensitive   (DEFAULTS, operator-tunable)
+// The model's sensitive_category still escalates any case-specific question via
+// the case rule, so a specific case relays even under a normal category, while
+// GENERAL policy for a normal category stays answerable.
 ```
 
-**Operator-configurable (DECIDED).** The τ values are a **stored setting the operator controls** — a simple "caution level" in the control center (e.g. Cautious / Balanced / Lean), mapping to threshold presets. We ship a safe default (bias-to-escalate); the owner owns the safety-vs-deflection dial and sees the effect in the quality panel (escalation rate vs. containment). **`HARD_SENSITIVE` is floor-locked** — it can never be tuned down, so safety/abuse/custody always escalate no matter the setting. This makes the tradeoff a transparent product control, not a hidden constant.
+**Operator-configurable (DECIDED).** Two dials the operator owns: (a) **each category's sensitivity tier** — normal / sensitive / always-escalate, set from the Knowledge Base ("Manage categories"), replacing the old hard-coded `SENSITIVE_INTENTS` and `HARD_SENSITIVE` constants; and (b) the **τ values** — a stored "caution level" (Cautious / Balanced / Lean) mapping to threshold presets. We ship safe defaults (safety/abuse/custody seeded always-escalate; bias-to-escalate); the owner sees the effect in the quality panel (escalation rate vs. containment). This makes the tradeoff a transparent product control, not a hidden constant. (Trade-off of de-hardcoding the floor: the always-escalate guarantee for safety/abuse now depends on the seeded default staying in place rather than a code lock — acceptable given it's operator-owned and defaults safe.)
 
 **Two-layer safety:** the model is *instructed* to escalate these (prompt, §4), AND code *enforces* it (§3). Defense in depth: a prompt regression can't silently start answering fever questions.
 
@@ -93,14 +96,15 @@ HARD_SENSITIVE = { safety, abuse, incident, custody, legal }
 The model proposes; **code disposes, before the parent sees anything.** Every check below runs inline, and **any failure routes to the live staff relay** — the *same* path and "let me check with our team… one moment" message we use for unknowns ([03 §3.3](03-ux-flows.md)). One escalation path whether the trigger is a sensitive case, thin grounding, a bad citation, or a **suspected hallucination**. This is the industry "block-before-user" grounding gate ([07](07-hallucination-guardrails-review.md)), routed through our existing relay UX — a suspect answer is never shown; it becomes a human-answered turn.
 
 ```ts
-async function decide(model: GroundedResult, intent: Intent): Promise<FinalDecision> {
-  const sensitive = SENSITIVE_INTENTS.has(intent);
+async function decide(model: GroundedResult, ctx: DecideContext): Promise<FinalDecision> {
+  const sensitive = ctx.sensitiveCategories.has(model.intent);       // operator tier, read live
+  const alwaysEscalate = ctx.alwaysEscalateCategories.has(model.intent);
   const tau = cautionLevel.tau(sensitive);        // operator-configurable; 0.75 / 0.9 defaults
 
   // 3a — hard routes (independent of model confidence)
-  if (model.sensitive_category && HARD_SENSITIVE.has(model.sensitive_category))
-    return relay(model, `sensitive:${model.sensitive_category}`);
-  if (sensitive && model.is_case_specific)
+  if (alwaysEscalate)                               // category tier = always_escalate
+    return relay(model, "sensitive:always_escalate");
+  if (model.is_case_specific && (model.sensitive_category !== null || sensitive))
     return relay(model, "sensitive:case_specific");
 
   // 3b — citation validity (fast, code)
@@ -121,6 +125,8 @@ async function decide(model: GroundedResult, intent: Intent): Promise<FinalDecis
   // 3e — INLINE GROUNDEDNESS GATE (model judge, Haiku): always for sensitive,
   //   plus the borderline band; non-sensitive well-grounded relies on 3c + async judge (§6)
   if (sensitive || model.grounding_confidence < tau + 0.1) {
+    if (!judgeEnabled)                              // judge off for cost (analysis/11)
+      return sensitive ? relay(model, "sensitive:unverified") : answer(model);
     const g = await judge.groundedness(model.parent_message, source);
     if (g < (sensitive ? 0.9 : 0.8))                return relay(model, "low_groundedness");
   }
@@ -130,6 +136,8 @@ async function decide(model: GroundedResult, intent: Intent): Promise<FinalDecis
 ```
 
 `relay(...)` triggers the **live staff relay** exactly as an unknown does. Two checks carry the most weight: **3c deterministic fact verification** (numbers/dates matched against the structured source — impossible to show a parent a wrong fever threshold) and **3e the inline groundedness gate** (held to **≥0.9 for sensitive**, the regulated-domain bar). Full rationale + industry mapping: [07-hallucination-guardrails-review.md](07-hallucination-guardrails-review.md).
+
+**The judge (3e) is operator-toggleable for cost** ([11](11-admin-settings-provider-config-and-availability.md), `Settings.judge_enabled`). It's the only LLM call in the guardrail stack (the answerer aside), and there's a second, async judge call per answered turn for metrics (§7) — so disabling it takes a chat from **two model calls to one**. It defaults **on**. When off, 3e **safe-degrades**: a turn that needed the judge and is **sensitive** relays (`sensitive:unverified`) rather than shipping unverified; a non-sensitive borderline turn answers on the deterministic checks (3b–3d) that already passed. The direction is one-way — disabling never lets a sensitive answer through unverified, only escalates it.
 
 ### 3.1 Greetings & small talk — a safe conversational lane
 
@@ -304,9 +312,9 @@ We ship **two real alternate implementations** — OpenAI and Google — behind 
 |---|---|
 | Model answers an ungrounded question | Code requires ≥1 **valid** citation, else escalate (§3). |
 | Model hallucinates a citation id | Citation ids verified against published set (§3). |
-| Model under-escalates a sensitive/case question | HARD_SENSITIVE + `is_case_specific` code override (§3); prompt reinforcement (§4). |
+| Model under-escalates a sensitive/case question | always-escalate category tier + `is_case_specific` code override (§3); prompt reinforcement (§4). |
 | Prompt regression starts answering fevers | Deterministic layer is independent of prompt — still escalates. |
-| Model over-escalates everything | Measured as escalation *precision* (Stage 05); tune τ down for non-sensitive intents. |
+| Model over-escalates everything | Measured as escalation *precision* (Stage 05); tune τ down for non-sensitive categories. |
 | Latency spike from thinking | Low/medium effort on answerer; judge is async. |
 | Stale policy (effective dates) | Prefix only includes `status=published` and effective-now records; date logic uses `structured`. |
 
@@ -316,8 +324,8 @@ We ship **two real alternate implementations** — OpenAI and Google — behind 
 
 **Decided:**
 1. **Answerer model:** ✅ **Sonnet 5** (parent-facing) + **Haiku 4.5** (async judge). Opus 5 reachable via the provider layer for hard cases. Cost/latency-right for a phone chat.
-2. **Escalation copy:** ✅ **Templated per-category relay/holding message + light model personalization** ("checking with our team — one moment"), *not* a handoff or callback promise. Front desk stays in control; staff answer relays into the same thread in real time, marked `staff` provenance. `HARD_SENSITIVE` categories lean most on the template. See [03 §3.3](03-ux-flows.md).
-3. **Thresholds:** ✅ **Bias-to-escalate, but operator-configurable** (§2). Ship 0.75/0.9 defaults; expose a "caution level" in the control center; `HARD_SENSITIVE` is floor-locked and never tunable down.
+2. **Escalation copy:** ✅ **Templated per-category relay/holding message + light model personalization** ("checking with our team — one moment"), *not* a handoff or callback promise. Front desk stays in control; staff answer relays into the same thread in real time, marked `staff` provenance. Always-escalate categories lean most on the template. See [03 §3.3](03-ux-flows.md).
+3. **Thresholds:** ✅ **Bias-to-escalate, but operator-configurable** (§2). Ship 0.75/0.9 defaults; expose a "caution level" in the control center; the always-escalate category tier hard-relays regardless of the caution dial (safety/abuse/custody seeded there by default).
 4. **Grounding strategy & scale-up trigger:** ✅ **Full-context + prompt caching** for this single-tenant PoC (§1.1) — the context window is not the constraint; retrieval quality, then sparse-traffic cost, then latency are. A real center's KB sits comfortably in the 🟢 band, so no retrieval is built. Documented scale-up when 🟡: a **BM25 pre-filter via SQLite FTS5** (deterministic, guardrail-preserving), *not* agentic/model-driven retrieval on the parent path; vector/hybrid deferred to the pgvector migration. **Set `ttl: "1h"`** on the cached prefix so a front desk's bursty traffic doesn't keep re-warming the 5-min cache.
 
 **Still open (later stages):**

@@ -5,8 +5,9 @@ import type { AuditMode, Settings } from "../types";
  * Repository for the single-row Settings (analysis/01 §2.6).
  *
  * The row is lazily created with defaults on first read, so callers never have
- * to worry about whether it exists. HARD_SENSITIVE floor-lock is intentionally
- * NOT here — it is code-fixed and cannot be tuned down (analysis/01 §2.6).
+ * to worry about whether it exists. Category sensitivity is intentionally NOT
+ * here — it's a per-category tier on the `categories` table, owned in the
+ * Knowledge Base (analysis/09 §4.3), not a global setting.
  */
 
 const DEFAULTS: Settings = {
@@ -18,14 +19,22 @@ const DEFAULTS: Settings = {
   offline_at: null,
   developer_mode: false,
   audit_mode: "off",
+  judge_enabled: true,
 };
 
-/** SQLite stores `developer_mode` as 0/1; the DB row shape before coercion. */
-type SettingsRow = Omit<Settings, "developer_mode"> & { developer_mode: number };
+/** SQLite stores booleans as 0/1; the DB row shape before coercion. */
+type SettingsRow = Omit<Settings, "developer_mode" | "judge_enabled"> & {
+  developer_mode: number;
+  judge_enabled: number;
+};
 
-/** Bind params for the settings row (developer_mode as an integer). */
+/** Bind params for the settings row (booleans as integers). */
 function toRow(s: Settings) {
-  return { ...s, developer_mode: s.developer_mode ? 1 : 0 };
+  return {
+    ...s,
+    developer_mode: s.developer_mode ? 1 : 0,
+    judge_enabled: s.judge_enabled ? 1 : 0,
+  };
 }
 
 /** The effective audit mode — "off" whenever developer mode is disabled. */
@@ -37,15 +46,17 @@ export function effectiveAuditMode(s: Settings): AuditMode {
 export function getSettings(db: Database): Settings {
   const row = db
     .prepare(
-      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode
+      `SELECT caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled
          FROM settings WHERE id = 1`,
     )
     .get() as SettingsRow | undefined;
-  if (row) return { ...row, developer_mode: !!row.developer_mode };
+  if (row) {
+    return { ...row, developer_mode: !!row.developer_mode, judge_enabled: !!row.judge_enabled };
+  }
 
   db.prepare(
-    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode)
-     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at, @developer_mode, @audit_mode)`,
+    `INSERT INTO settings (id, caution_level, active_provider, availability, operator_name, away_message, offline_at, developer_mode, audit_mode, judge_enabled)
+     VALUES (1, @caution_level, @active_provider, @availability, @operator_name, @away_message, @offline_at, @developer_mode, @audit_mode, @judge_enabled)`,
   ).run(toRow(DEFAULTS));
   return { ...DEFAULTS };
 }
@@ -80,7 +91,8 @@ export function updateSettings(
             away_message = @away_message,
             offline_at = @offline_at,
             developer_mode = @developer_mode,
-            audit_mode = @audit_mode
+            audit_mode = @audit_mode,
+            judge_enabled = @judge_enabled
       WHERE id = 1`,
   ).run(toRow(next));
   return next;

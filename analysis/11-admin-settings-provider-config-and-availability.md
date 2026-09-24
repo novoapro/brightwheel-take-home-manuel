@@ -97,6 +97,11 @@ provider_credentials {
 ```
 `Settings.active_provider` stays on the settings row (now the 3-value enum). Routes: extend `GET/PUT /api/admin/settings` or add **`/api/admin/provider`** (passcode-gated) wrapping a `credentials` repo + a `crypto` util (`encrypt`/`decrypt`/`mask`) — **unit-tested** ([[testing-convention]]: round-trip, tamper-detection, masking, "empty = unchanged").
 
+### 3.7 Cost control — the groundedness-judge toggle (`Settings.judge_enabled`)
+A grounded FAQ chat makes up to **two model calls per answered turn**: the answerer, plus the Haiku **groundedness judge** — inline as the 3e gate on sensitive/borderline turns ([04 §3e](04-grounding-and-prompts.md)) and again async for the dashboard metric (§7). `Settings.judge_enabled` (boolean, **default on**, `settings` table `INTEGER NOT NULL DEFAULT 1`) lets a cost-sensitive center turn the judge off, dropping to **one call per turn**.
+
+Disabling **safe-degrades**, never weakens: `frontdesk.ts` omits `ctx.judge`, so `decide()`'s 3e stage escalates any **sensitive** answer it can't verify (`sensitive:unverified`) while letting non-sensitive borderline answers through on the deterministic checks (3b–3d); `/api/admin/ask` also skips the async metrics judge. UI: a toggle in **Settings → Groundedness judge** ([SettingsPanel.tsx](../src/components/admin/SettingsPanel.tsx)). Trade-off surfaced to the operator: lower cost vs. more escalations on sensitive topics (and no groundedness metric while off).
+
 ---
 
 ## 4. Feature B — Online/Away mode + operator identity

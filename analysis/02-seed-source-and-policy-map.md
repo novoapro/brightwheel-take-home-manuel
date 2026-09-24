@@ -68,20 +68,25 @@ The richest deterministic + escalation surface. Grounded exclusion criteria:
 
 ## 3. Sensitive-topic taxonomy → escalation categories
 
-Straight from the handbook, mapped to the canonical `sensitive_category` set ([09 §4.1](09-plan-review-and-consistency.md)). These are the "never auto-answer" set — the front desk **relays to staff in one voice** (never a channel switch):
+Straight from the handbook, mapped to the canonical `sensitive_category` set ([09 §4.1](09-plan-review-and-consistency.md)) — the model's per-turn classification of a question's content. The column below shows that `sensitive_category`; how it *escalates* is now operator-owned ([09 §4.2–4.3](09-plan-review-and-consistency.md)):
 
-| Handbook topic | Escalation reason | Why it must be a human |
+- **Always-escalate categories** (`safety, abuse, incident, custody, legal`, seeded at that tier) — the front desk **never answers**; the logged reason is `sensitive:always_escalate`.
+- **Everything else** stays answerable as *general policy* and escalates only when the question is about a **specific child/account/incident** (the case-specific rule); the logged reason is `sensitive:case_specific`.
+
+Either way the front desk **relays to staff in one voice** (never a channel switch). The `sensitive_category` value still flavors the relay/holding message and enriches the audit.
+
+| Handbook topic | `sensitive_category` | Why it must be a human |
 |---|---|---|
-| Custody / divorced-separated parents, restraining orders, pickup authorization | `sensitive:custody` (court orders → `sensitive:legal`) | Legal, child-safety, identity-specific — center is "a neutral party." |
-| **Suspected child abuse/neglect** | `sensitive:abuse` | Mandatory legal report; explicitly **not confidential**. Never a chatbot topic. |
-| Accidents / injuries / hospitalization / incident reports | `sensitive:incident` | Child-specific medical event. |
-| Behavioral issues / restraint / expulsion risk | `sensitive:behavior` | Requires a conference, judgment, care. |
-| Disenrollment / termination / fees in arrears | `sensitive:billing` / `sensitive:enrollment` | Account-specific, emotionally charged. |
-| Billing **disputes** (vs. general fee info) | `sensitive:billing` | Dispute ≠ FAQ. |
-| Missing child / lock-down / emergency | `sensitive:safety` | Real-time crisis → humans + 911, not an assistant. |
-| Grievances / complaints about staff | `sensitive:grievance` | Route to Head Teacher per grievance process. |
-| Child-specific health/allergy/medication judgment | `sensitive:health` | Answer the *policy*, escalate the *case*. |
-| Special needs / IFSP / IEP / toilet-learning plans | `sensitive:individual` | Individualized plans, not general policy. |
+| Custody / divorced-separated parents, restraining orders, pickup authorization | `custody` (court orders → `legal`) — *always-escalate* | Legal, child-safety, identity-specific — center is "a neutral party." |
+| **Suspected child abuse/neglect** | `abuse` — *always-escalate* | Mandatory legal report; explicitly **not confidential**. Never a chatbot topic. |
+| Accidents / injuries / hospitalization / incident reports | `incident` — *always-escalate* | Child-specific medical event. |
+| Behavioral issues / restraint / expulsion risk | `behavior` — *case-specific* | Requires a conference, judgment, care. |
+| Disenrollment / termination / fees in arrears | `billing` / `enrollment` — *case-specific* | Account-specific, emotionally charged. |
+| Billing **disputes** (vs. general fee info) | `billing` — *case-specific* | Dispute ≠ FAQ. |
+| Missing child / lock-down / emergency | `safety` — *always-escalate* | Real-time crisis → humans + 911, not an assistant. |
+| Grievances / complaints about staff | `grievance` — *case-specific* | Route to Head Teacher per grievance process. |
+| Child-specific health/allergy/medication judgment | `health` — *case-specific* | Answer the *policy*, escalate the *case*. |
+| Special needs / IFSP / IEP / toilet-learning plans | `individual` — *case-specific* | Individualized plans, not general policy. |
 
 **Design consequence:** the assistant answers **general policy** confidently; the moment a question is about *this specific child/account/incident*, it escalates. That single rule ("policy = answer, case = escalate") is clean, defensible, and demo-able.
 

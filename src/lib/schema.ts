@@ -1,4 +1,9 @@
 import type { Database } from "better-sqlite3";
+import {
+  DEFAULT_ALWAYS_ESCALATE_CATEGORIES,
+  defaultSensitivityFor,
+  INTENTS,
+} from "./types";
 
 /**
  * The full relational schema for Front Desk.
@@ -72,6 +77,21 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
   embedding      BLOB                         -- reserved, unpopulated in v1
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_intent_status ON knowledge_entries (intent, status);
+
+-- categories: operator-owned KB categories (a.k.a. intents), first-class so their
+-- sensitivity is configured, not hard-coded (analysis/09 §4.3). The three-level
+-- sensitivity tier drives the guardrail for any answer classified under it:
+--   normal | sensitive (higher tau + groundedness floor) | always_escalate
+--   (never answered — the old HARD_SENSITIVE behavior, now per-category).
+-- Read by the pipeline via sensitiveCategorySet() / alwaysEscalateCategorySet().
+-- name mirrors knowledge_entries.intent; a row is auto-created when a new intent
+-- first appears on an entry. The core defaults are seeded in migrate().
+CREATE TABLE IF NOT EXISTS categories (
+  name        TEXT PRIMARY KEY,
+  sensitivity TEXT NOT NULL DEFAULT 'normal'
+                CHECK (sensitivity IN ('normal','sensitive','always_escalate')),
+  updated_at  TEXT NOT NULL
+);
 
 -- parent_sessions: a persisted parent identity + thread (analysis/11 §6).
 -- Keyed by email so a returning parent resumes their open session; closed
@@ -217,7 +237,11 @@ CREATE TABLE IF NOT EXISTS settings (
   --   off     = collect nothing; flagged = keep only sessions that didn't get a
   --   👍 (👎 or unrated); all = keep every session's envelope.
   -- Off by default so enabling developer mode collects nothing until chosen.
-  audit_mode      TEXT NOT NULL DEFAULT 'off' CHECK (audit_mode IN ('off','flagged','all'))
+  audit_mode      TEXT NOT NULL DEFAULT 'off' CHECK (audit_mode IN ('off','flagged','all')),
+  -- judge_enabled: run the LLM groundedness judge (inline gate + async metrics).
+  -- On by default; off makes one model call per turn instead of two (cost), with
+  -- sensitive answers safe-degrading to escalation (analysis/04 §3e).
+  judge_enabled   INTEGER NOT NULL DEFAULT 1
 );
 
 -- provider_credentials: per-provider API key (encrypted) + model choice (analysis/11 §3.6).
@@ -241,6 +265,9 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
  */
 export function migrate(db: Database): void {
   db.exec(DDL);
+  migrateCategoriesTier(db);
+  addColumnIfMissing(db, "settings", "judge_enabled", "INTEGER NOT NULL DEFAULT 1");
+  seedDefaultCategories(db);
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('app', 'ai-front-desk')
        ON CONFLICT(key) DO NOTHING`,
@@ -249,4 +276,84 @@ export function migrate(db: Database): void {
     `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(String(SCHEMA_VERSION));
+}
+
+/**
+ * Seed the built-in core categories, marking DEFAULT_SENSITIVE_CATEGORIES as
+ * sensitive. Runs on every migrate() but only *creates* missing rows — an
+ * operator's later sensitivity edits (and any categories they added) are never
+ * overwritten. Runs before any entry upsert so a core category always exists with
+ * the correct default before it's referenced.
+ */
+function seedDefaultCategories(db: Database): void {
+  const now = new Date().toISOString();
+  const insert = db.prepare(
+    `INSERT INTO categories (name, sensitivity, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(name) DO NOTHING`,
+  );
+  // Core intents, plus any category already present on an entry (seeded/imported
+  // before this table existed). Each gets its default tier from the name (health →
+  // sensitive; safety/abuse/… → always_escalate; else normal). OR IGNORE keeps the
+  // operator's tier once a row exists — this only fills gaps.
+  const names = new Set<string>(INTENTS);
+  for (const r of db
+    .prepare(`SELECT DISTINCT intent FROM knowledge_entries`)
+    .all() as { intent: string }[]) {
+    names.add(r.intent);
+  }
+  for (const name of names) insert.run(name, defaultSensitivityFor(name), now);
+}
+
+/**
+ * Add a column to an existing table if it isn't already there — a tiny forward
+ * migration for pre-existing DBs (the consolidated DDL only creates *missing*
+ * tables, so a new column on an existing table needs this). The definition must
+ * carry a DEFAULT so existing rows get a value.
+ */
+function addColumnIfMissing(
+  db: Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const cols = new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+      (c) => c.name,
+    ),
+  );
+  if (!cols.has(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+/**
+ * One-time in-place migration for databases that carry the first `categories`
+ * shape (a boolean `sensitive` column) instead of the `sensitivity` tier. Adds
+ * the tier column and backfills it from the old flag, so an operator's earlier
+ * toggles survive. No-op on a fresh DB (the DDL already has `sensitivity`) and on
+ * an already-migrated one. The now-unused `sensitive` column is left in place —
+ * harmless (defaults to 0) and cheaper than a table rebuild for a PoC.
+ */
+function migrateCategoriesTier(db: Database): void {
+  const cols = new Set(
+    (db.prepare(`PRAGMA table_info(categories)`).all() as { name: string }[]).map(
+      (c) => c.name,
+    ),
+  );
+  if (cols.has("sensitivity")) return; // fresh or already migrated
+  db.exec(`ALTER TABLE categories ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'normal'`);
+  if (cols.has("sensitive")) {
+    // Preserve an operator's explicit "sensitive" choice from the boolean model…
+    db.prepare(`UPDATE categories SET sensitivity = 'sensitive' WHERE sensitive = 1`).run();
+  }
+  // …then apply the safe always-escalate default to KNOWN-RISKY categories that
+  // were never configured (still 'normal'). The old schema had no always-escalate
+  // option, so this can't override a deliberate operator choice — it only lifts
+  // categories the operator couldn't have set that low on purpose.
+  const risky = DEFAULT_ALWAYS_ESCALATE_CATEGORIES;
+  const placeholders = risky.map(() => "?").join(",");
+  db.prepare(
+    `UPDATE categories SET sensitivity = 'always_escalate'
+       WHERE sensitivity = 'normal' AND name IN (${placeholders})`,
+  ).run(...risky);
 }

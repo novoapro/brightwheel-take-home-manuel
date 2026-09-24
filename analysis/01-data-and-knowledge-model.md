@@ -69,6 +69,22 @@ KnowledgeEntry {
 
 **Why `structured` alongside `body_md`:** prose is what the parent reads; the typed payload is what *policy logic* runs on (e.g. "is 2026-11-11 a closure?", "infant tuition?"). This is what lets us handle edge cases deterministically instead of hoping the model reads a paragraph correctly — the depth the brief rewards.
 
+### 2.2b `Category` — operator-owned KB categories + sensitivity tier
+A KnowledgeEntry's `intent` names a category; categories are first-class rows so their **sensitivity is configured, not hard-coded** ([09 §4.3](09-plan-review-and-consistency.md)).
+
+```
+Category {
+  name          // lowercase token; matches KnowledgeEntry.intent  (PRIMARY KEY)
+  sensitivity   // "normal" | "sensitive" | "always_escalate"
+  updated_at
+}
+```
+- **normal** — answered like any other category.
+- **sensitive** — the guardrail holds it to a higher confidence bar (τ) + groundedness floor before answering (general policy still answerable when well-grounded).
+- **always_escalate** — never answered; every question relays to staff. This replaced the old hard-coded `HARD_SENSITIVE` constant.
+
+Operators manage categories (create / remove / set tier) from the Knowledge Base ("Manage categories"). A row is auto-created at its default tier when a new intent first appears on an entry. The decision pipeline reads the live tiers via `sensitiveCategorySet()` / `alwaysEscalateCategorySet()` — passed into `decide()` — so a change takes effect on the next turn with no code change. Seed defaults: `health` → sensitive; `safety, abuse, incident, custody, legal` → always_escalate. Independently, the model's per-turn `sensitive_category` still escalates any **case-specific** question, even under a normal category ([09 §4.1–4.2](09-plan-review-and-consistency.md)).
+
 ### 2.3 `Escalation` — an unknown/sensitive question relayed to staff
 ```
 Escalation {
@@ -114,10 +130,11 @@ Settings {
   availability: "online" | "away",                         // presence — drives live relay vs. email follow-up ([11 §4](11-admin-settings-provider-config-and-availability.md))
   operator_name,                                           // durable real-name attribution for relay + KB edits
   away_message,                                            // shown to parents while Away
-  offline_at                                               // when the center went Away
+  offline_at,                                              // when the center went Away
+  judge_enabled: bool                                      // run the groundedness judge? (default on; off = 1 LLM call/turn, [04 §3e](04-grounding-and-prompts.md))
 }
 ```
-HARD_SENSITIVE floor-lock is **not** part of Settings — it is code-fixed and cannot be tuned down.
+Category sensitivity is **not** part of Settings — it lives per-category on `Category.sensitivity` (§2.2b), owned in the Knowledge Base, not as a global dial.
 
 ### 2.7 `provider_credentials` — per-provider key + model config (see [11 §3.6](11-admin-settings-provider-config-and-availability.md))
 One row per provider (`anthropic` | `openai` | `google`) holding an **AES-256-GCM-encrypted API key**, the chosen **answerer** and **judge** model ids, and a **validity** flag (whether the key last verified OK). `Settings.active_provider` points at whichever row is live.
@@ -129,8 +146,10 @@ Persists a returning parent's identity **keyed by email**, linked to a `conversa
 ```
 Center 1─┐
          └─* KnowledgeEntry ─cited_by─* InteractionAudit *─raises─0..1 Escalation
-                    ▲                                                   │
-                    └──────────────── promoted_to (capture) ───────────┘
+                    │ ▲                                                 │
+             intent │ └──────────────── promoted_to (capture) ─────────┘
+                    ▼
+                 Category (name, sensitivity tier)
 ```
 The loop is literally an edge in the schema: an `Escalation.operator_answer` becomes a new `KnowledgeEntry(origin="captured")`, which then gets `cited_by` future interactions. **The compounding-deflection story is a foreign key.**
 

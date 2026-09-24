@@ -3,8 +3,10 @@ import type { Database } from "better-sqlite3";
 import { createMemoryDb } from "../db";
 import {
   countEntries,
+  deleteAllEntries,
   deleteEntry,
   getEntry,
+  importEntries,
   listEntries,
   listIntents,
   listPublishedEntries,
@@ -122,6 +124,29 @@ describe("knowledge repo", () => {
     expect(deleteEntry(db, "hours.regular")).toBe(true);
     expect(getEntry(db, "hours.regular")).toBeNull();
     expect(deleteEntry(db, "hours.regular")).toBe(false); // already gone
+  });
+
+  it("deleteAllEntries wipes the whole base and reports the count", () => {
+    upsertEntry(db, base);
+    upsertEntry(db, { ...base, id: "tuition.rates", intent: "tuition" });
+    upsertEntry(db, { ...base, id: "health.x", intent: "health" });
+    expect(deleteAllEntries(db)).toBe(3);
+    expect(countEntries(db)).toBe(0);
+    expect(deleteAllEntries(db)).toBe(0); // idempotent on an empty base
+  });
+
+  it("importEntries bulk-upserts, overwriting existing ids and bumping versions", () => {
+    upsertEntry(db, base); // hours.regular v1
+    const count = importEntries(db, [
+      { ...base, title: "Updated Hours" }, // overwrites hours.regular
+      { ...base, id: "tuition.rates", intent: "tuition", title: "Rates" },
+    ]);
+    expect(count).toBe(2);
+    expect(countEntries(db)).toBe(2);
+    const hours = getEntry(db, "hours.regular")!;
+    expect(hours.title).toBe("Updated Hours");
+    expect(hours.version).toBe(2); // overwrote v1
+    expect(getEntry(db, "tuition.rates")!.intent).toBe("tuition");
   });
 
   it("listIntents lists core categories first, then custom ones alphabetically", () => {

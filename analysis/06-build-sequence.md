@@ -59,7 +59,7 @@
 
 ### M6 — Quality depth + settings  · SHOULD
 - Async **Haiku groundedness judge** → `judge_scores` → dashboard.
-- **Caution-level** setting (τ presets, floor-locked HARD_SENSITIVE) ([04](04-grounding-and-prompts.md) §2).
+- **Caution-level** setting (τ presets) + per-category sensitivity tiers incl. always-escalate ([04](04-grounding-and-prompts.md) §2, [01 §2.2b](01-data-and-knowledge-model.md)).
 - **Shippable:** self-evaluating system + owner-tunable safety dial.
 
 ### M7 — Additional providers + polish  · COULD
@@ -105,7 +105,7 @@ M2 is the linchpin; **M2.5 rides on it** (the golden suite validates the guardra
 | Parent-facing latency | Med | Cache the prefix, Sonnet 5, low/med effort; judge is async ([04](04-grounding-and-prompts.md)). |
 | Two providers eat the timebox | Med | Gemini is **COULD** (M7), fully isolated behind the interface. |
 | Over-scoping breadth | Med | Depth on 5 intents + the loop; breadth handled *by* the loop, not faked. |
-| Model mis-escalates | Low-Med | Deterministic wrapper + floor-locked HARD_SENSITIVE ([04 §3](04-grounding-and-prompts.md)); measured by escalation recall ([05](05-quality-audit-and-metrics.md)). |
+| Model mis-escalates | Low-Med | Deterministic wrapper + operator-owned always-escalate category tier ([04 §3](04-grounding-and-prompts.md)); measured by escalation recall ([05](05-quality-audit-and-metrics.md)). |
 
 ---
 
@@ -145,7 +145,7 @@ The writeup/video should walk these, in order:
 - [ ] Hosted URL, mobile-friendly, both surfaces reachable (`/` + `/admin`).
 - [ ] 5 intents answered grounded + cited; the [02 §4](02-seed-source-and-policy-map.md) showcases all work.
 - [ ] Inline guardrails live (fact-check + groundedness gate); a wrong number/date is blocked → relayed, never shown.
-- [ ] `npm run eval` green on the golden set; escalation recall on sensitive intents ≥ target.
+- [ ] `npm run eval` green on the golden set; escalation recall on sensitive categories ≥ target.
 - [ ] Live-relay loop demonstrable end-to-end, with capture compounding.
 - [ ] Operator can edit the source of truth and see quality/struggles.
 - [ ] <1-page writeup **or** <2-min video walking §7.

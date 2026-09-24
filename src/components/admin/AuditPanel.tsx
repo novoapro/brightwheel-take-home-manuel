@@ -389,15 +389,11 @@ function InteractionCard({ it, auditMode }: { it: Interaction; auditMode: AuditM
           v={it.judge_scores?.groundedness == null ? "—" : it.judge_scores.groundedness.toFixed(2)}
         />
         <Row k="Model" v={`${it.provider ?? "—"} · ${it.model ?? "—"}`} />
-        {it.checks && (
-          <Row
-            k="Guardrails"
-            v={Object.entries(it.checks)
-              .map(([k, v]) => `${k}:${v}`)
-              .join("  ")}
-          />
-        )}
       </dl>
+
+      {it.checks && Object.keys(it.checks).length > 0 && (
+        <GuardrailChecks checks={it.checks} />
+      )}
 
       {it.envelope ? (
         <div className="mt-3">
@@ -426,6 +422,69 @@ function InteractionCard({ it, auditMode }: { it: Interaction; auditMode: AuditM
         </p>
       )}
     </div>
+  );
+}
+
+/** Human labels for the deterministic guardrail checks (see guardrails/decide.ts). */
+const GUARDRAIL_LABELS: Record<string, string> = {
+  citation_valid: "Citation valid",
+  fact_match: "Fact-check",
+  groundedness_gate: "Groundedness gate",
+};
+
+/** The three inline guardrail results, collapsed by default — one `name: status`
+ *  per line when expanded. Collapsed, it summarizes whether anything failed. */
+function GuardrailChecks({ checks }: { checks: Record<string, string> }) {
+  const [open, setOpen] = useState(false);
+  // Canonical order first, then any unexpected keys, so the display is stable.
+  const order = ["citation_valid", "fact_match", "groundedness_gate"];
+  const keys = [
+    ...order.filter((k) => k in checks),
+    ...Object.keys(checks).filter((k) => !order.includes(k)),
+  ];
+  const failed = keys.filter((k) => checks[k] === "fail").length;
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-xs font-medium text-brand-strong hover:underline"
+      >
+        <span aria-hidden className="text-[10px]">{open ? "▾" : "▸"}</span>
+        Guardrails
+        <span className={`font-normal ${failed > 0 ? "text-red-600 dark:text-red-500" : "text-muted"}`}>
+          ({failed > 0 ? `${failed} failed` : "all clear"})
+        </span>
+      </button>
+      {open && (
+        <dl className="mt-2 divide-y divide-border rounded-lg border border-border bg-background text-xs">
+          {keys.map((k) => (
+            <div key={k} className="flex items-center justify-between gap-3 px-3 py-1.5">
+              <dt className="text-muted">{GUARDRAIL_LABELS[k] ?? k}</dt>
+              <dd>
+                <GuardrailStatus state={checks[k]} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function GuardrailStatus({ state }: { state: string }) {
+  const cfg =
+    state === "pass"
+      ? { cls: "text-green-700 dark:text-green-500", mark: "✓" }
+      : state === "fail"
+        ? { cls: "text-red-600 dark:text-red-500", mark: "✗" }
+        : { cls: "text-muted", mark: "–" };
+  return (
+    <span className={`inline-flex items-center gap-1 font-medium ${cfg.cls}`}>
+      <span aria-hidden>{cfg.mark}</span>
+      {state}
+    </span>
   );
 }
 

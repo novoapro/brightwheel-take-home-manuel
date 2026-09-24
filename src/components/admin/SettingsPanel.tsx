@@ -13,6 +13,7 @@ type Settings = {
   away_message: string;
   developer_mode: boolean;
   audit_mode: AuditMode;
+  judge_enabled: boolean;
 };
 
 const CAUTIONS: { value: CautionLevel; label: string; hint: string }[] = [
@@ -27,7 +28,7 @@ const AUDIT_MODES: { value: AuditMode; label: string; hint: string }[] = [
   { value: "all", label: "All sessions", hint: "keep detail for every session" },
 ];
 
-/** The owner's safety dial (analysis/03 §4.4). HARD_SENSITIVE is floor-locked. */
+/** The owner's safety dial (analysis/03 §4.4). Always-escalate categories relay regardless of this dial. */
 export default function SettingsPanel({
   passcode,
   onDeveloperMode,
@@ -95,8 +96,10 @@ export default function SettingsPanel({
       </section>
 
       <div className="rounded-lg border border-border bg-you p-3 text-xs text-muted">
-        🔒 Safety, suspected abuse, injuries, custody, and legal matters
-        <b> always</b> go to a person — this floor can&apos;t be lowered.
+        🔒 Safety, suspected abuse, injuries, custody, and legal categories ship set
+        to <b>always escalate</b> — every question goes to a person. You can retune
+        any category&apos;s sensitivity under the Knowledge Base &rsaquo; Manage
+        categories.
       </div>
 
       <section className="rounded-xl border border-border bg-surface p-4 shadow-card md:p-5">
@@ -130,7 +133,11 @@ export default function SettingsPanel({
         <p className="mt-1 text-xs text-muted">Leave blank to use the default disclaimer.</p>
       </section>
 
-      <ProviderConfig passcode={passcode} />
+      <ProviderConfig
+        passcode={passcode}
+        judgeEnabled={settings.judge_enabled}
+        onJudgeChange={(v) => patch({ judge_enabled: v })}
+      />
 
       {/* Developer tools — visually set apart, at the bottom (analysis/05 §5). */}
       <section className="rounded-xl border border-dashed border-border bg-you/40 p-4 md:p-5">
@@ -226,7 +233,15 @@ const PROVIDER_ORDER: Provider[] = ["anthropic", "openai", "google"];
  * Select one provider, set its API key (write-only, masked) + model, and
  * activate it (analysis/11 §3.5). Keys are encrypted at rest and never returned.
  */
-function ProviderConfig({ passcode }: { passcode: string }) {
+function ProviderConfig({
+  passcode,
+  judgeEnabled,
+  onJudgeChange,
+}: {
+  passcode: string;
+  judgeEnabled: boolean;
+  onJudgeChange: (value: boolean) => void;
+}) {
   const [data, setData] = useState<ProviderData>();
   const [selected, setSelected] = useState<Provider>("anthropic");
   const [keyInput, setKeyInput] = useState("");
@@ -379,6 +394,33 @@ function ProviderConfig({ passcode }: { passcode: string }) {
         {busy ? "Saving…" : "Save + activate"}
       </button>
       {msg && <p className="mt-2 text-xs text-brand-strong">{msg}</p>}
+
+      <div className="mt-4 border-t border-border pt-4">
+        <h3 className="mb-1 text-sm font-semibold">Groundedness judge</h3>
+        <p className="mb-3 text-xs text-muted">
+          A second AI model that double-checks each answer is backed by your
+          policies before it&apos;s shown. Turning it off makes{" "}
+          <b>one AI call per question instead of two</b> (lower cost), but the front
+          desk leans on its faster checks alone.
+        </p>
+        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={judgeEnabled}
+            onChange={(e) => onJudgeChange(e.target.checked)}
+          />
+          <span className="font-medium">
+            {judgeEnabled ? "On — verify every answer" : "Off — save on cost"}
+          </span>
+        </label>
+        {!judgeEnabled && (
+          <p className="mt-2 text-xs text-muted">
+            With the judge off, anything in a <b>sensitive</b> or{" "}
+            <b>always-escalate</b> category is handed to you instead of answered —
+            we never show a sensitive answer we couldn&apos;t verify.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

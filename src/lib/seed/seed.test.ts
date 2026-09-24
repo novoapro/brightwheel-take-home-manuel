@@ -27,6 +27,7 @@ describe("seedDatabase", () => {
       offline_at: null,
       developer_mode: false,
       audit_mode: "off",
+      judge_enabled: true,
     });
     expect(countEntries(db)).toBe(ENTRIES.length);
   });

@@ -24,10 +24,62 @@ export type CoreIntent = (typeof INTENTS)[number];
 export type DetectedIntent = Intent | "out_of_scope";
 
 /**
- * Intents that are intrinsically sensitive and carry the higher groundedness
- * threshold (τ=0.9). Canonical set — analysis/09 §4.3. Only `health` qualifies.
+ * A category's sensitivity tier (analysis/09 §4.3) — operator-owned, three levels:
+ *   normal          — answered like any other category.
+ *   sensitive       — higher confidence bar (τ) + groundedness floor before we
+ *                     answer; general policy still answerable when well-grounded.
+ *   always_escalate — never answered; every question in this category relays to
+ *                     staff (the old hard-coded `HARD_SENSITIVE` behavior, now a
+ *                     per-category setting the operator owns).
  */
-export const SENSITIVE_INTENTS: readonly Intent[] = ["health"];
+export type CategorySensitivity = "normal" | "sensitive" | "always_escalate";
+
+/**
+ * Categories seeded as *sensitive* on a fresh install (analysis/09 §4.3). Only a
+ * DEFAULT — the tier is a per-category setting operators own from the Knowledge
+ * Base ("Manage categories"), read by the decision pipeline via
+ * `sensitiveCategorySet()`. Nothing in the guardrail reads this constant.
+ */
+export const DEFAULT_SENSITIVE_CATEGORIES: readonly Intent[] = ["health"];
+
+/**
+ * Category names seeded (and auto-created) as *always-escalate* by default — the
+ * old `HARD_SENSITIVE` set. These are just sensible defaults for a fresh center /
+ * a freshly-imported category of this name; operators can lower or raise any
+ * category's tier afterward. The guardrail reads the live per-category setting,
+ * never this list.
+ */
+export const DEFAULT_ALWAYS_ESCALATE_CATEGORIES: readonly Intent[] = [
+  "safety",
+  "abuse",
+  "incident",
+  "custody",
+  "legal",
+];
+
+/** The tier a category takes when first created, from the default sets above. */
+export function defaultSensitivityFor(name: string): CategorySensitivity {
+  if ((DEFAULT_ALWAYS_ESCALATE_CATEGORIES as readonly string[]).includes(name)) {
+    return "always_escalate";
+  }
+  if ((DEFAULT_SENSITIVE_CATEGORIES as readonly string[]).includes(name)) {
+    return "sensitive";
+  }
+  return "normal";
+}
+
+/**
+ * A Knowledge Base category (a.k.a. intent). Operator-owned, first-class: created
+ * and removed from the KB editor, each with a `sensitivity` tier that drives the
+ * guardrail for any answer classified under it (analysis/09 §4.3).
+ */
+export interface Category {
+  /** Lowercase token; matches `knowledge_entries.intent`. */
+  name: string;
+  /** Operator-set tier — see `CategorySensitivity`. */
+  sensitivity: CategorySensitivity;
+  updated_at: string;
+}
 
 /** Canonical sensitive_category set — analysis/09 §4.1. */
 export const SENSITIVE_CATEGORIES = [
@@ -44,18 +96,6 @@ export const SENSITIVE_CATEGORIES = [
   "legal",
 ] as const;
 export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
-
-/**
- * Always-escalate, floor-locked categories — never operator-lowered.
- * Canonical set — analysis/09 §4.2.
- */
-export const HARD_SENSITIVE: readonly SensitiveCategory[] = [
-  "safety",
-  "abuse",
-  "incident",
-  "custody",
-  "legal",
-];
 
 /**
  * published — served to parents (in the grounding prefix).
@@ -145,6 +185,15 @@ export interface Settings {
   developer_mode: boolean;
   /** How much per-turn troubleshooting detail we retain for audit (analysis/05 §2). */
   audit_mode: AuditMode;
+  /**
+   * Whether the LLM groundedness judge runs (analysis/04 §3e/§7). On by default.
+   * When off we make ONE model call per turn instead of two — the inline
+   * groundedness gate and the async metrics judge are both skipped — trading the
+   * extra verification for cost. Safe-degrade: an answer under a *sensitive*
+   * category, which requires the judge, escalates to staff rather than shipping
+   * unverified; non-sensitive answers still pass on the deterministic checks.
+   */
+  judge_enabled: boolean;
 }
 
 /** How a staff answer reaches the parent (analysis/11 §4.3). */

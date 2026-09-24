@@ -24,6 +24,7 @@ describe("settings repo", () => {
       offline_at: null,
       developer_mode: false,
       audit_mode: "off",
+      judge_enabled: true,
     });
     expect(
       (db.prepare(`SELECT COUNT(*) AS n FROM settings`).get() as { n: number })
@@ -61,6 +62,7 @@ describe("settings repo", () => {
       offline_at: null,
       developer_mode: false,
       audit_mode: "off",
+      judge_enabled: true,
     });
     expect(getSettings(db)).toEqual(s);
   });

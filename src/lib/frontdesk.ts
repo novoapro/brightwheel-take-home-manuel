@@ -3,6 +3,7 @@ import { decide, type FinalDecision } from "./guardrails/decide";
 import { getModel } from "./model";
 import type { FrontDeskModel, GroundedResult, Msg } from "./model/types";
 import { buildSystemPrefix, relayMessage } from "./model/prompt";
+import { alwaysEscalateCategorySet, sensitiveCategorySet } from "./repo/categories";
 import { getCenter } from "./repo/center";
 import { listPublishedEntries } from "./repo/knowledge";
 import { getSettings } from "./repo/settings";
@@ -57,8 +58,12 @@ export async function ask(db: Database, input: AskInput): Promise<AskResult> {
   const decision = await decide(proposal, {
     question: input.question,
     publishedPolicies,
+    sensitiveCategories: sensitiveCategorySet(db),
+    alwaysEscalateCategories: alwaysEscalateCategorySet(db),
     caution: settings.caution_level,
-    judge: (i) => model.judgeGroundedness(i),
+    // Judge omitted when disabled for cost (analysis/11) — the wrapper then skips
+    // the inline gate and safe-degrades sensitive answers to escalation.
+    judge: settings.judge_enabled ? (i) => model.judgeGroundedness(i) : undefined,
     relayMessage,
   });
 

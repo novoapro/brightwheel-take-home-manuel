@@ -9,6 +9,7 @@ import {
   touchSession,
 } from "@/lib/repo/sessions";
 import { applyRetention } from "@/lib/retention";
+import { getSettings } from "@/lib/repo/settings";
 
 // better-sqlite3 + the Anthropic SDK need the Node.js runtime (never Edge).
 export const runtime = "nodejs";
@@ -66,7 +67,13 @@ export async function POST(request: Request) {
 
     // Off the critical path: score groundedness for the dashboard (analysis/04 §7).
     // The always-on container keeps this promise alive after the response returns.
-    if (result.decision === "answered" && result.message.citations.length > 0) {
+    // Skipped when the operator disables the judge for cost (analysis/11) — the
+    // second model call per turn goes away along with the inline gate.
+    if (
+      getSettings(db).judge_enabled &&
+      result.decision === "answered" &&
+      result.message.citations.length > 0
+    ) {
       void judgeInteraction(db, {
         interactionId: result.interactionId,
         question,

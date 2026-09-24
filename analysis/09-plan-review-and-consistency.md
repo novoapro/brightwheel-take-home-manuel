@@ -54,25 +54,31 @@ legal      — legal / regulatory matters
 ```
 Plus the cross-cutting flag `pii` (identity-specific about a particular child/account).
 
-### 4.2 `HARD_SENSITIVE` (always escalate, floor-locked — never operator-lowered)
-```
-{ safety, abuse, incident, custody, legal }
-```
-(missing-child folds into `safety`; restraining-order into `custody`.) Everything else in 4.1 escalates via the **case-specific** rule (sensitive_category + is_case_specific), not a hard floor — so *general* fee/enrollment/behavior *policy* stays answerable, while the *specific case* relays.
+### 4.2 Always-escalate — now the operator-owned `always_escalate` category tier
+Previously a floor-locked constant `HARD_SENSITIVE = { safety, abuse, incident, custody, legal }`. It is **no longer a hard-coded constant the guardrail reads** (analysis/04 §2): "always escalate" is now the top tier of a per-category sensitivity setting (§4.3). A category set to `always_escalate` never answers — every question in it relays, regardless of confidence or the model's own answer intent.
 
-### 4.3 `SENSITIVE_INTENTS` (of the 5, which carry the higher τ=0.9)
+Those five names are seeded/auto-created at the `always_escalate` tier by default (`DEFAULT_ALWAYS_ESCALATE_CATEGORIES`) so a fresh center is safe out of the box, but an operator can retune any category. Cross-cutting content sensitivity is still caught independently: the model's per-turn `sensitive_category` (§4.1) escalates any **case-specific** question via the case rule (`sensitive_category !== null && is_case_specific`), even under a normal category — so *general* fee/enrollment/behavior *policy* stays answerable while the *specific case* relays.
+
+### 4.3 Category sensitivity tiers (operator-owned)
+Sensitivity is **operator-configured, not hard-coded**: each KB category (a.k.a. intent) carries a `sensitivity` tier on the `categories` table, set from the Knowledge Base ("Manage categories"):
+
 ```
-{ health }
+normal          — answered like any other category
+sensitive       — higher confidence bar (τ=0.9) + groundedness floor before answering
+always_escalate — never answered; every question relays (replaces HARD_SENSITIVE)
 ```
-Only `health` is intrinsically sensitive as an *intent*. `tuition` is answerable in general; its billing-dispute subcase is caught by `sensitive_category=billing` + case-specific, **not** by making the whole intent sensitive. All non-health sensitivity flows through `sensitive_category`, independent of intent.
+
+The pipeline reads the live sets via `sensitiveCategorySet()` (sensitive-or-stricter → higher bar) and `alwaysEscalateCategorySet()` (hard relay), passed into `decide()` as `ctx.sensitiveCategories` / `ctx.alwaysEscalateCategories`, so an operator's change takes effect on the next turn with no code change. Seed defaults: `health` → sensitive (`DEFAULT_SENSITIVE_CATEGORIES`); `safety/abuse/incident/custody/legal` → always_escalate. `tuition` ships normal — answerable in general, with its billing-dispute subcase caught by `sensitive_category=billing` + case-specific. The per-turn `sensitive_category` taxonomy (§4.1) is retained purely as this cross-cutting case-specific signal.
 
 ### 4.4 `decision_reason` (canonical set logged on every interaction)
 ```
 answered:  "grounded"
 relayed:   "no_citation" | "invalid_citation" | "fact_mismatch" |
-           "below_threshold" | "low_groundedness" |
-           "sensitive:<category>" | "sensitive:case_specific" | "out_of_scope"
+           "below_threshold" | "low_groundedness" | "model_escalate" |
+           "sensitive:always_escalate" | "sensitive:case_specific" |
+           "sensitive:unverified" | "out_of_scope"
 ```
+`sensitive:unverified` is the safe-degrade when the groundedness judge is disabled for cost (§4.3, [04 §3e](04-grounding-and-prompts.md)): a sensitive answer we couldn't verify is escalated rather than shown.
 Matches the [04 §3](04-grounding-and-prompts.md) wrapper exactly; [01](01-data-and-knowledge-model.md)/[05](05-quality-audit-and-metrics.md) reference this set.
 
 ---

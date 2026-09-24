@@ -75,7 +75,7 @@ Parent question → cached grounded call (all published policies in the prompt p
 
 ### Non-negotiables when building
 - **Never show an answer that fails the guardrail wrapper — relay to staff instead** ([04 §3](analysis/04-grounding-and-prompts.md), [07](analysis/07-hallucination-guardrails-review.md)).
-- **Canonical definitions** (sensitive taxonomy, `HARD_SENSITIVE`, `SENSITIVE_INTENTS`, `decision_reason`) live in [analysis/09 §4](analysis/09-plan-review-and-consistency.md) — use them, don't redefine.
+- **Canonical definitions** (the `sensitive_category` taxonomy, the operator-owned category **sensitivity tiers** — normal / sensitive / always_escalate, which replaced the hard-coded `HARD_SENSITIVE` / `SENSITIVE_INTENTS` constants — and `decision_reason`) live in [analysis/09 §4](analysis/09-plan-review-and-consistency.md) — use them, don't redefine. Category sensitivity is read from the `categories` table via `sensitiveCategorySet()` / `alwaysEscalateCategorySet()`, never hard-coded in the pipeline.
 - Mobile-first; warm, not IVR. Fictional data only (Little Acorns Early Learning Center).
 
 ## Claude API usage

@@ -22,7 +22,7 @@ export function GET(request: Request) {
   return NextResponse.json({ ok: true, settings: resolveAvailability(getDb()) });
 }
 
-/** Update the caution dial, provider, and/or availability. HARD_SENSITIVE stays floor-locked. */
+/** Update the caution dial, provider, and/or availability. Category sensitivity tiers are owned in the Knowledge Base, not here. */
 export async function PUT(request: Request) {
   if (!isAdmin(request)) return adminUnauthorized();
   const body = (await request.json()) as Record<string, unknown>;
@@ -48,6 +48,9 @@ export async function PUT(request: Request) {
   if (AUDIT_MODES.includes(body.audit_mode as AuditMode)) {
     patch.audit_mode = body.audit_mode as AuditMode;
   }
+  if (typeof body.judge_enabled === "boolean") {
+    patch.judge_enabled = body.judge_enabled;
+  }
   // offline_at: null = never; an ISO string = auto-flip to Away at that time.
   if (body.offline_at === null) {
     patch.offline_at = null;
@@ -60,19 +63,24 @@ export async function PUT(request: Request) {
       {
         ok: false,
         error:
-          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message / developer_mode / audit_mode).",
+          "Nothing valid to update (caution_level / active_provider / availability / operator_name / away_message / developer_mode / audit_mode / judge_enabled).",
       },
       { status: 400 },
     );
   }
 
   // Invariant: the desk is never Online anonymously — a name is required to go
-  // Online (analysis/11 §4.1). Enforced here, not just in the UI.
+  // Online (analysis/11 §4.1). Enforced here, not just in the UI. Only guard when
+  // the patch actually touches presence — otherwise an unrelated update (e.g.
+  // toggling developer_mode) would be rejected whenever the desk happens to be in
+  // the default Online-without-a-name state, silently failing to persist.
   const current = getSettings(getDb());
   const nextAvailability = patch.availability ?? current.availability;
   const nextOperator =
     patch.operator_name !== undefined ? patch.operator_name : current.operator_name;
-  if (nextAvailability === "online" && !nextOperator) {
+  const touchesPresence =
+    patch.availability !== undefined || patch.operator_name !== undefined;
+  if (touchesPresence && nextAvailability === "online" && !nextOperator) {
     return NextResponse.json(
       { ok: false, error: "A name is required to go Online." },
       { status: 400 },

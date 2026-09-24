@@ -43,7 +43,7 @@ Mapping the plan to the 6 layers of the standard stack:
 **Gap:** our groundedness judge runs async, so a low-grounded answer can still reach a parent (we only find out after). Industry standard blocks first.
 **Fix:** run the groundedness check **on the critical path** and, on failure, **suppress the answer and relay to staff** — never show a suspect answer.
 - Threshold: **≥0.8 general, ≥0.9 sensitive** (health/safety/billing) — matching the regulated-domain bar; aligns with our existing τ split.
-- **Tiered for latency** (§6): always run the cheap deterministic checks; run the model-judge gate **always for sensitive intents**, and for non-sensitive rely on deterministic fact-check + self-report, with the async judge as backstop. Judge = Haiku (fast).
+- **Tiered for latency** (§6): always run the cheap deterministic checks; run the model-judge gate **always for sensitive categories**, and for non-sensitive rely on deterministic fact-check + self-report, with the async judge as backstop. Judge = Haiku (fast).
 - This makes our wrapper the **same pattern as Bedrock Contextual Grounding Check / Azure Groundedness Detection**, implemented directly.
 
 ### P0 — Deterministic structured-fact verification (our differentiator)

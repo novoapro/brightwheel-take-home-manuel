@@ -3,8 +3,8 @@ import type { CautionLevel } from "../types";
 /**
  * τ (tau) presets by operator caution level (analysis/04 §2). τ is the
  * confidence bar to *answer*; sensitive questions get a higher bar so we
- * escalate more readily. Defaults are Balanced = 0.75 / 0.9. HARD_SENSITIVE is
- * floor-locked elsewhere and never affected by these dials.
+ * escalate more readily. Defaults are Balanced = 0.75 / 0.9. Always-escalate
+ * categories relay before τ is ever consulted, so these dials never affect them.
  */
 const PRESETS: Record<CautionLevel, { normal: number; sensitive: number }> = {
   cautious: { normal: 0.85, sensitive: 0.95 },

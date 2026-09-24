@@ -6,6 +6,7 @@ import type {
   KnowledgeEntry,
   KnowledgeEntryStatus,
 } from "../types";
+import { ensureCategory, listCategories } from "./categories";
 
 /**
  * Repository for KnowledgeEntry — the citable source of truth.
@@ -102,6 +103,11 @@ export function upsertEntry(db: Database, input: KnowledgeEntryInput): Knowledge
     updated_at: now,
   });
 
+  // Keep the category table authoritative: a brand-new intent gets a (default
+  // non-sensitive) category row so it shows up in "Manage categories" and the
+  // pipeline can read its sensitivity. Existing categories are left untouched.
+  ensureCategory(db, input.intent);
+
   return getEntry(db, input.id)!;
 }
 
@@ -178,21 +184,46 @@ export function deleteEntry(db: Database, id: string): boolean {
 }
 
 /**
- * The distinct categories present in the knowledge base, with the built-in core
- * intents first (in their canonical order) followed by any operator-added
- * categories, alphabetically. Powers the editor's category suggestions and the
- * grouped list view.
+ * Permanently remove every entry from the knowledge base. As with `deleteEntry`,
+ * any escalation capture edge (`promoted_entry_id`) is unlinked first so the FK
+ * stays valid and escalation history is preserved. Returns how many were removed.
+ */
+export function deleteAllEntries(db: Database): number {
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE escalations SET promoted_entry_id = NULL WHERE promoted_entry_id IS NOT NULL`,
+    ).run();
+    return db.prepare(`DELETE FROM knowledge_entries`).run().changes;
+  })();
+}
+
+/**
+ * Bulk upsert entries in one transaction — the KB import path. Each input is
+ * upserted (overwriting an existing id, bumping its version). Returns the count.
+ */
+export function importEntries(db: Database, inputs: KnowledgeEntryInput[]): number {
+  return db.transaction(() => {
+    for (const input of inputs) upsertEntry(db, input);
+    return inputs.length;
+  })();
+}
+
+/**
+ * The known category names — core intents first (canonical order), then
+ * operator-added ones alphabetically. Sourced from the categories table (which
+ * includes categories with no entries yet), with any distinct entry intents
+ * folded in as a safety net. Powers the editor's category suggestions and the
+ * grouped list view. For sensitivity, callers use `listCategories`.
  */
 export function listIntents(db: Database): Intent[] {
-  const present = new Set(
-    (
-      db
-        .prepare(`SELECT DISTINCT intent FROM knowledge_entries`)
-        .all() as { intent: string }[]
-    ).map((r) => r.intent),
-  );
-  const core = [...INTENTS];
-  const extras = [...present]
+  const names = new Set(listCategories(db).map((c) => c.name));
+  for (const r of db
+    .prepare(`SELECT DISTINCT intent FROM knowledge_entries`)
+    .all() as { intent: string }[]) {
+    names.add(r.intent);
+  }
+  const core = (INTENTS as readonly string[]).filter((i) => names.has(i));
+  const extras = [...names]
     .filter((i) => !(INTENTS as readonly string[]).includes(i))
     .sort();
   return [...core, ...extras];

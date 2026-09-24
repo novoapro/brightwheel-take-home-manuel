@@ -8,6 +8,7 @@ import {
   listIntents,
   upsertEntry,
 } from "@/lib/repo/knowledge";
+import { listCategories } from "@/lib/repo/categories";
 import {
   type Intent,
   type KnowledgeEntryInput,
@@ -25,6 +26,7 @@ export function GET(request: Request) {
     ok: true,
     entries: listEntries(db),
     intents: listIntents(db),
+    categories: listCategories(db),
   });
 }
 
