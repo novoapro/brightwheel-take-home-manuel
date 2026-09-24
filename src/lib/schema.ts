@@ -1,9 +1,5 @@
 import type { Database } from "better-sqlite3";
-import {
-  DEFAULT_ALWAYS_ESCALATE_CATEGORIES,
-  defaultSensitivityFor,
-  INTENTS,
-} from "./types";
+import { defaultSensitivityFor, INTENTS } from "./types";
 
 /**
  * The full relational schema for Front Desk.
@@ -21,11 +17,11 @@ import {
  * (`retrieval`, `latency_human_response_ms`, `operator_disposition`) are likewise
  * reserved for planned analytics/triage work — kept intentionally, not dead.
  *
- * This is the first version's consolidated baseline — a single `CREATE TABLE IF
- * NOT EXISTS` pass, no incremental migration history. It is idempotent: safe to
- * run on every boot and in tests against a fresh :memory: database. When the
- * shape changes pre-1.0 we edit this DDL and recreate the (disposable) dev DB
- * rather than carrying migrations.
+ * This is a single flat `CREATE TABLE IF NOT EXISTS` pass — no incremental
+ * migration history and no in-place column/table upgrades, because nothing is
+ * deployed yet. It is idempotent: safe to run on every boot and in tests against
+ * a fresh :memory: database. When the shape changes pre-1.0 we edit this DDL and
+ * recreate the (disposable) dev DB rather than carrying migrations.
  */
 export const SCHEMA_VERSION = 1;
 
@@ -265,8 +261,6 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
  */
 export function migrate(db: Database): void {
   db.exec(DDL);
-  migrateCategoriesTier(db);
-  addColumnIfMissing(db, "settings", "judge_enabled", "INTEGER NOT NULL DEFAULT 1");
   seedDefaultCategories(db);
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('app', 'ai-front-desk')
@@ -302,58 +296,4 @@ function seedDefaultCategories(db: Database): void {
     names.add(r.intent);
   }
   for (const name of names) insert.run(name, defaultSensitivityFor(name), now);
-}
-
-/**
- * Add a column to an existing table if it isn't already there — a tiny forward
- * migration for pre-existing DBs (the consolidated DDL only creates *missing*
- * tables, so a new column on an existing table needs this). The definition must
- * carry a DEFAULT so existing rows get a value.
- */
-function addColumnIfMissing(
-  db: Database,
-  table: string,
-  column: string,
-  definition: string,
-): void {
-  const cols = new Set(
-    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
-      (c) => c.name,
-    ),
-  );
-  if (!cols.has(column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-}
-
-/**
- * One-time in-place migration for databases that carry the first `categories`
- * shape (a boolean `sensitive` column) instead of the `sensitivity` tier. Adds
- * the tier column and backfills it from the old flag, so an operator's earlier
- * toggles survive. No-op on a fresh DB (the DDL already has `sensitivity`) and on
- * an already-migrated one. The now-unused `sensitive` column is left in place —
- * harmless (defaults to 0) and cheaper than a table rebuild for a PoC.
- */
-function migrateCategoriesTier(db: Database): void {
-  const cols = new Set(
-    (db.prepare(`PRAGMA table_info(categories)`).all() as { name: string }[]).map(
-      (c) => c.name,
-    ),
-  );
-  if (cols.has("sensitivity")) return; // fresh or already migrated
-  db.exec(`ALTER TABLE categories ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'normal'`);
-  if (cols.has("sensitive")) {
-    // Preserve an operator's explicit "sensitive" choice from the boolean model…
-    db.prepare(`UPDATE categories SET sensitivity = 'sensitive' WHERE sensitive = 1`).run();
-  }
-  // …then apply the safe always-escalate default to KNOWN-RISKY categories that
-  // were never configured (still 'normal'). The old schema had no always-escalate
-  // option, so this can't override a deliberate operator choice — it only lifts
-  // categories the operator couldn't have set that low on purpose.
-  const risky = DEFAULT_ALWAYS_ESCALATE_CATEGORIES;
-  const placeholders = risky.map(() => "?").join(",");
-  db.prepare(
-    `UPDATE categories SET sensitivity = 'always_escalate'
-       WHERE sensitivity = 'normal' AND name IN (${placeholders})`,
-  ).run(...risky);
 }
